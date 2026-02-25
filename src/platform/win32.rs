@@ -582,6 +582,7 @@ fn register_window_class(
     Ok(())
 }
 
+#[allow(clippy::manual_dangling_ptr)]
 fn load_main_icons(instance: HINSTANCE) -> (HICON, HICON) {
     let resource = PCWSTR(1 as *const u16);
     let default_icon = unsafe { LoadIconW(None, IDI_APPLICATION) }.unwrap_or(HICON(0));
@@ -609,10 +610,10 @@ fn load_icon_scaled(
             LR_DEFAULTCOLOR | LR_SHARED,
         )
     };
-    if let Ok(icon) = handle {
-        if icon.0 != 0 {
-            return HICON(icon.0);
-        }
+    if let Ok(icon) = handle
+        && icon.0 != 0
+    {
+        return HICON(icon.0);
     }
     unsafe { LoadIconW(instance, resource) }.unwrap_or(fallback)
 }
