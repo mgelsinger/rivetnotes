@@ -22,6 +22,11 @@ const SCI_GETCURRENTPOS: u32 = 2008;
 const SCI_GETCOLUMN: u32 = 2129;
 const SCI_LINEFROMPOSITION: u32 = 2166;
 const SCI_SETMODEVENTMASK: u32 = 2359;
+const SCI_SETMARGINS: u32 = 2252;
+const SCI_SETMARGINTYPEN: u32 = 2240;
+const SCI_SETMARGINWIDTHN: u32 = 2242;
+const SCI_SETMARGINLEFT: u32 = 2155;
+const SCI_SETMARGINRIGHT: u32 = 2157;
 const SCI_GOTOLINE: u32 = 2024;
 const SCI_GOTOPOS: u32 = 2025;
 const SCI_SETSAVEPOINT: u32 = 2014;
@@ -69,6 +74,7 @@ const SC_EOL_CRLF: usize = 0;
 const SC_EOL_LF: usize = 1;
 const SC_WRAP_NONE: usize = 0;
 const SC_WRAP_WORD: usize = 1;
+const SC_MARGIN_SYMBOL: usize = 0;
 const SC_MOD_INSERTTEXT: usize = 0x1;
 const SC_MOD_DELETETEXT: usize = 0x2;
 
@@ -163,7 +169,7 @@ const COLOR_DARK_BACK: u32 = color(30, 30, 30);
 const COLOR_SELECTION_LIGHT: u32 = color(205, 232, 255);
 const COLOR_SELECTION_DARK: u32 = color(38, 79, 120);
 const COLOR_CARET_LIGHT: u32 = color(32, 32, 32);
-const COLOR_CARET_DARK: u32 = color(174, 175, 173);
+const COLOR_CARET_DARK: u32 = color(220, 220, 220);
 const COLOR_CARET_LINE_LIGHT: u32 = color(240, 240, 240);
 const COLOR_CARET_LINE_DARK: u32 = color(42, 42, 42);
 const COLOR_COMMENT: u32 = color(0, 128, 0);
@@ -244,6 +250,13 @@ pub fn initialize(hwnd: HWND) {
         SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT,
         0,
     );
+    send_message(hwnd, SCI_SETMARGINS, 0, 0);
+    for margin in 0..5 {
+        send_message(hwnd, SCI_SETMARGINTYPEN, margin, SC_MARGIN_SYMBOL as isize);
+        send_message(hwnd, SCI_SETMARGINWIDTHN, margin, 0);
+    }
+    send_message(hwnd, SCI_SETMARGINLEFT, 0, 0);
+    send_message(hwnd, SCI_SETMARGINRIGHT, 0, 0);
 }
 
 pub fn create_window(parent: HWND, instance: HINSTANCE) -> Result<HWND> {

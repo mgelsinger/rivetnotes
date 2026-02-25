@@ -168,6 +168,11 @@ const SCFIND_MATCHCASE: usize = 0x4;
 const SCFIND_WHOLEWORD: usize = 0x2;
 const SCFIND_REGEXP: usize = 0x0020_0000;
 
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn SetFocus(hwnd: HWND) -> HWND;
+}
+
 struct DocTab {
     editor: HWND,
     doc: Document,
@@ -2690,6 +2695,11 @@ fn select_tab(hwnd: HWND, state: &mut AppState, index: usize) {
         let show = if i == index { SW_SHOW } else { SW_HIDE };
         unsafe {
             ShowWindow(doc.editor, show);
+        }
+    }
+    if let Some(doc_tab) = state.docs.get(index) {
+        unsafe {
+            SetFocus(doc_tab.editor);
         }
     }
 

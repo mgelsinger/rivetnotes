@@ -7,6 +7,13 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 - TBD.
 
+## [0.1.2] - 2026-02-25
+
+- Removed the editor's left gutter/padding for a flush text area.
+- Improved dark-mode caret visibility.
+- Focus editor automatically when selecting tabs.
+- Suppressed the console window for release builds.
+
 ## [0.1.1] - 2026-02-25
 
 - Vertical tab layout with resizable sidebar and layout cycling.

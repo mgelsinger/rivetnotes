@@ -1,3 +1,4 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![deny(clippy::expect_used)]
 #![deny(clippy::panic)]
 #![deny(clippy::todo)]
