@@ -19,6 +19,7 @@ way, Rivet is the point.
 
 - Installer: download `rivet-<version>-setup.exe` from Releases
 - Portable: download `rivet-<version>-win64-portable.zip` from Releases
+- Windows SmartScreen: if prompted, click `More info` → `Run anyway`.
 
 ## Build it from source
 
