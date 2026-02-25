@@ -44,7 +44,7 @@ jobs:
           $lines = Get-Content CHANGELOG.md
           $start = ($lines | Select-String -SimpleMatch "## [$version]" -List).LineNumber
           if (-not $start) { throw "Release section [$version] not found in CHANGELOG.md." }
-          $next = ($lines | Select-String -Pattern '^## \\[' | Where-Object { $_.LineNumber -gt $start } | Select-Object -First 1).LineNumber
+          $next = ($lines | Select-String -SimpleMatch "## [" | Where-Object { $_.LineNumber -gt $start } | Select-Object -First 1).LineNumber
           if ($next) {
             $section = $lines[($start - 1)..($next - 2)]
           } else {
