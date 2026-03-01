@@ -6,10 +6,12 @@
 #![deny(clippy::unwrap_used)]
 
 mod app;
+mod commands;
 mod editor;
 mod error;
 mod logging;
 mod platform;
+mod textops;
 
 fn main() {
     let verbose = logging::verbose_from_env();

@@ -7,6 +7,23 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 - TBD.
 
+## [0.2.0] - 2026-03-01
+
+- Added parent-owned editor context menu with exactly three commands:
+  `Uppercase`, `Lowercase`, and `Trim Leading + Trailing Whitespace`.
+- Disabled Scintilla default popup (`SCI_USEPOPUP(SC_POPUP_NEVER)`) so context
+  menu behavior is consistent and app-controlled.
+- Added Scintilla key bindings for text transforms:
+  `Ctrl+U` (lowercase) and `Ctrl+Shift+U` (uppercase).
+- Added `Edit -> Copy to Clipboard` operations:
+  `Copy Full Path`, `Copy Filename`, and `Copy Directory Path`.
+- Added enable/disable command state logic so no-op actions are greyed out:
+  selection-based transform enablement and saved-path-based copy enablement.
+- Added pure command/text logic modules and unit tests for trim semantics,
+  copy-path behavior, and command enablement decisions.
+- Added/updated CI to enforce `cargo fmt --check`,
+  `cargo clippy -- -D warnings`, and `cargo test` on Windows.
+
 ## [0.1.2] - 2026-02-25
 
 - Removed the editor's left gutter/padding for a flush text area.

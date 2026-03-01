@@ -18,10 +18,17 @@ const SCI_SETCODEPAGE: u32 = 2037;
 const SCI_SETTEXT: u32 = 2181;
 const SCI_GETTEXT: u32 = 2182;
 const SCI_GETLENGTH: u32 = 2006;
+const SCI_GETCHARAT: u32 = 2007;
 const SCI_GETCURRENTPOS: u32 = 2008;
 const SCI_GETCOLUMN: u32 = 2129;
+const SCI_GETLINEENDPOSITION: u32 = 2136;
+const SCI_GETSELECTIONSTART: u32 = 2143;
+const SCI_GETSELECTIONEND: u32 = 2145;
+const SCI_GETLINECOUNT: u32 = 2154;
 const SCI_LINEFROMPOSITION: u32 = 2166;
+const SCI_POSITIONFROMLINE: u32 = 2167;
 const SCI_SETMODEVENTMASK: u32 = 2359;
+const SCI_ASSIGNCMDKEY: u32 = 2070;
 const SCI_SETMARGINS: u32 = 2252;
 const SCI_SETMARGINTYPEN: u32 = 2240;
 const SCI_SETMARGINWIDTHN: u32 = 2242;
@@ -47,9 +54,14 @@ const SCI_BEGINUNDOACTION: u32 = 2078;
 const SCI_ENDUNDOACTION: u32 = 2079;
 const SCI_SETSEL: u32 = 2160;
 const SCI_REPLACESEL: u32 = 2170;
+const SCI_SETTARGETRANGE: u32 = 2686;
+const SCI_REPLACETARGET: u32 = 2194;
 const SCI_SETSEARCHFLAGS: u32 = 2198;
 const SCI_SEARCHNEXT: u32 = 2367;
 const SCI_SEARCHPREV: u32 = 2368;
+const SCI_LOWERCASE: u32 = 2340;
+const SCI_UPPERCASE: u32 = 2341;
+const SCI_USEPOPUP: u32 = 2371;
 const SCI_SETEOLMODE: u32 = 2031;
 const SCI_SETWRAPMODE: u32 = 2268;
 const SCI_STYLECLEARALL: u32 = 2050;
@@ -77,6 +89,10 @@ const SC_WRAP_WORD: usize = 1;
 const SC_MARGIN_SYMBOL: usize = 0;
 const SC_MOD_INSERTTEXT: usize = 0x1;
 const SC_MOD_DELETETEXT: usize = 0x2;
+const SC_POPUP_NEVER: usize = 0;
+const SCMOD_SHIFT: usize = 0x1;
+const SCMOD_CTRL: usize = 0x2;
+const KEY_U: usize = b'U' as usize;
 
 const STYLE_DEFAULT: usize = 32;
 
@@ -257,6 +273,19 @@ pub fn initialize(hwnd: HWND) {
     }
     send_message(hwnd, SCI_SETMARGINLEFT, 0, 0);
     send_message(hwnd, SCI_SETMARGINRIGHT, 0, 0);
+    send_message(hwnd, SCI_USEPOPUP, SC_POPUP_NEVER, 0);
+    assign_default_command_keys(hwnd);
+}
+
+fn assign_default_command_keys(hwnd: HWND) {
+    let lower = command_key(KEY_U, SCMOD_CTRL);
+    let upper = command_key(KEY_U, SCMOD_CTRL | SCMOD_SHIFT);
+    send_message(hwnd, SCI_ASSIGNCMDKEY, lower, SCI_LOWERCASE as isize);
+    send_message(hwnd, SCI_ASSIGNCMDKEY, upper, SCI_UPPERCASE as isize);
+}
+
+fn command_key(key_code: usize, key_mod: usize) -> usize {
+    key_code | (key_mod << 16)
 }
 
 pub fn create_window(parent: HWND, instance: HINSTANCE) -> Result<HWND> {
@@ -390,6 +419,55 @@ pub fn outdent_selection(hwnd: HWND) {
     send_message(hwnd, SCI_BACKTAB, 0, 0);
 }
 
+pub fn selection_start(hwnd: HWND) -> usize {
+    send_message(hwnd, SCI_GETSELECTIONSTART, 0, 0).0 as usize
+}
+
+pub fn selection_end(hwnd: HWND) -> usize {
+    send_message(hwnd, SCI_GETSELECTIONEND, 0, 0).0 as usize
+}
+
+pub fn uppercase_selection(hwnd: HWND) {
+    send_message(hwnd, SCI_UPPERCASE, 0, 0);
+}
+
+pub fn lowercase_selection(hwnd: HWND) {
+    send_message(hwnd, SCI_LOWERCASE, 0, 0);
+}
+
+pub fn line_count(hwnd: HWND) -> usize {
+    send_message(hwnd, SCI_GETLINECOUNT, 0, 0).0 as usize
+}
+
+pub fn position_from_line(hwnd: HWND, line: usize) -> usize {
+    send_message(hwnd, SCI_POSITIONFROMLINE, line, 0).0 as usize
+}
+
+pub fn line_end_position(hwnd: HWND, line: usize) -> usize {
+    send_message(hwnd, SCI_GETLINEENDPOSITION, line, 0).0 as usize
+}
+
+pub fn char_at(hwnd: HWND, pos: usize) -> u8 {
+    send_message(hwnd, SCI_GETCHARAT, pos, 0).0 as u8
+}
+
+pub fn begin_undo_action(hwnd: HWND) {
+    send_message(hwnd, SCI_BEGINUNDOACTION, 0, 0);
+}
+
+pub fn end_undo_action(hwnd: HWND) {
+    send_message(hwnd, SCI_ENDUNDOACTION, 0, 0);
+}
+
+pub fn set_target_range(hwnd: HWND, start: usize, end: usize) {
+    send_message(hwnd, SCI_SETTARGETRANGE, start, end as isize);
+}
+
+pub fn replace_target_empty(hwnd: HWND) {
+    const EMPTY: [u8; 1] = [0];
+    send_message(hwnd, SCI_REPLACETARGET, 0, EMPTY.as_ptr() as isize);
+}
+
 pub fn search_next(hwnd: HWND, text: &str, flags: usize, wrap: bool) -> bool {
     if text.is_empty() {
         return false;
@@ -443,27 +521,6 @@ pub fn replace_selection(hwnd: HWND, text: &str) {
 
 pub fn get_length(hwnd: HWND) -> usize {
     send_message(hwnd, SCI_GETLENGTH, 0, 0).0 as usize
-}
-
-pub fn trim_trailing_whitespace(hwnd: HWND) -> Result<()> {
-    let text = get_text(hwnd)?;
-    let trimmed = trim_trailing_whitespace_str(&text)?;
-    if trimmed == text {
-        return Ok(());
-    }
-
-    send_message(hwnd, SCI_BEGINUNDOACTION, 0, 0);
-    send_message(
-        hwnd,
-        SCI_SETSEL,
-        0,
-        text.len().try_into().unwrap_or(isize::MAX),
-    );
-    let mut buffer = trimmed.into_bytes();
-    buffer.push(0);
-    send_message(hwnd, SCI_REPLACESEL, 0, buffer.as_ptr() as isize);
-    send_message(hwnd, SCI_ENDUNDOACTION, 0, 0);
-    Ok(())
 }
 
 pub fn set_eol_mode(hwnd: HWND, eol: Eol) {
@@ -731,63 +788,6 @@ fn set_style_font(hwnd: HWND, style: usize, font: &str) {
     send_message(hwnd, SCI_STYLESETFONT, style, font.as_ptr() as isize);
 }
 
-fn trim_trailing_whitespace_str(text: &str) -> Result<String> {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-
-    while i < bytes.len() {
-        let line_start = i;
-        while i < bytes.len() && bytes[i] != b'\r' && bytes[i] != b'\n' {
-            i += 1;
-        }
-        let mut line_end = i;
-        while line_end > line_start && (bytes[line_end - 1] == b' ' || bytes[line_end - 1] == b'\t')
-        {
-            line_end -= 1;
-        }
-        out.extend_from_slice(&bytes[line_start..line_end]);
-
-        if i < bytes.len() {
-            if bytes[i] == b'\r' {
-                if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
-                    out.extend_from_slice(b"\r\n");
-                    i += 2;
-                } else {
-                    out.push(b'\r');
-                    i += 1;
-                }
-            } else if bytes[i] == b'\n' {
-                out.push(b'\n');
-                i += 1;
-            }
-        }
-    }
-
-    String::from_utf8(out).map_err(|err| AppError::new(format!("Invalid UTF-8 text: {err}")))
-}
-
 fn send_message(hwnd: HWND, msg: u32, wparam: usize, lparam: isize) -> LRESULT {
     unsafe { SendMessageW(hwnd, msg, WPARAM(wparam), LPARAM(lparam)) }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn trim_trailing_whitespace_preserves_newlines() {
-        let input = "one  \n two\t\r\nthree\t\t";
-        let expected = "one\n two\r\nthree";
-        let result = trim_trailing_whitespace_str(input).unwrap();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn trim_trailing_whitespace_keeps_line_breaks() {
-        let input = "one \r";
-        let expected = "one\r";
-        let result = trim_trailing_whitespace_str(input).unwrap();
-        assert_eq!(result, expected);
-    }
 }

@@ -14,6 +14,13 @@ way, Rivet is the point.
 - Word wrap toggle (on by default)
 - Status bar with encoding, line endings, line/column, and word count
 - Always-on-top toggle for quick note-taking
+- Minimal menu bar (`File`, `Edit`, `Help`) and tiny editor context menu
+- Text transforms: `Uppercase`, `Lowercase`, `Trim Leading + Trailing Whitespace`
+- Shortcut support for transforms (`Ctrl+U`, `Ctrl+Shift+U`) and tab close (`Ctrl+W`)
+- Clipboard path helpers in `Edit -> Copy to Clipboard`:
+  - `Copy Full Path`
+  - `Copy Filename`
+  - `Copy Directory Path`
 
 ## Install
 

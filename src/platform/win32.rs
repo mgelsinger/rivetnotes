@@ -6,7 +6,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::Instant;
 
 use windows::Win32::Foundation::{
-    COLORREF, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM,
+    COLORREF, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, POINT,
+    WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
     CreateSolidBrush, DeleteObject, HBRUSH, HDC, InvalidateRect, SetBkColor, SetTextColor,
@@ -33,32 +34,41 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     ACCEL, AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON, CS_HREDRAW,
     CS_VREDRAW, CW_USEDEFAULT, CheckMenuItem, CreateAcceleratorTableW, CreateMenu, CreatePopupMenu,
-    CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable, DestroyWindow, DispatchMessageW,
-    ES_AUTOHSCROLL, FALT, FCONTROL, FSHIFT, FVIRTKEY, GCLP_HICON, GCLP_HICONSM, GWLP_USERDATA,
-    GetClientRect, GetMenu, GetMessageW, GetParent, GetSystemMetrics, GetWindowLongPtrW,
-    GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON, HMENU, HWND_NOTOPMOST, HWND_TOPMOST,
-    ICON_BIG, ICON_SMALL, ICON_SMALL2, IDC_ARROW, IDC_SIZEWE, IDI_APPLICATION, IDNO, IDYES,
-    IMAGE_ICON, KillTimer, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, LBN_DBLCLK,
-    LBN_SELCHANGE, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW,
-    LoadIconW, LoadImageW, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL,
-    MF_BYCOMMAND, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MessageBoxW,
-    PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE,
-    SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SYSTEM_METRICS_INDEX, SendMessageW,
-    SetClassLongPtrW, SetCursor, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
-    ShowWindow, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WM_ACTIVATEAPP, WM_CLOSE,
-    WM_COMMAND, WM_CREATE, WM_CTLCOLORLISTBOX, WM_DESTROY, WM_DROPFILES, WM_GETICON,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_SETCURSOR, WM_SETICON,
-    WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW,
-    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable, DestroyMenu, DestroyWindow,
+    DispatchMessageW, ES_AUTOHSCROLL, EnableMenuItem, FALT, FCONTROL, FSHIFT, FVIRTKEY, GCLP_HICON,
+    GCLP_HICONSM, GWLP_USERDATA, GetClientRect, GetCursorPos, GetMenu, GetMessageW, GetParent,
+    GetSystemMetrics, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON,
+    HMENU, HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL, ICON_SMALL2, IDC_ARROW, IDC_SIZEWE,
+    IDI_APPLICATION, IDNO, IDYES, IMAGE_ICON, KillTimer, LB_ADDSTRING, LB_GETCURSEL,
+    LB_RESETCONTENT, LB_SETCURSEL, LBN_DBLCLK, LBN_SELCHANGE, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY,
+    LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW, LoadImageW, MB_ICONERROR, MB_ICONWARNING,
+    MB_OK, MB_YESNO, MB_YESNOCANCEL, MF_BYCOMMAND, MF_CHECKED, MF_ENABLED, MF_GRAYED, MF_POPUP,
+    MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MessageBoxW, PostQuitMessage, RegisterClassExW,
+    SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SYSTEM_METRICS_INDEX, SendMessageW, SetClassLongPtrW, SetCursor, SetTimer,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE,
+    WM_ACTIVATEAPP, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLORLISTBOX,
+    WM_DESTROY, WM_DROPFILES, WM_GETICON, WM_INITMENUPOPUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_SETCURSOR, WM_SETICON, WM_SIZE,
+    WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
+    WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::PWSTR;
 use windows::core::{HSTRING, PCWSTR, w};
 
 use crate::app::document::{self, Document, Eol, TextEncoding};
 use crate::app::session;
+use crate::commands::copy_full_path::{
+    CopyPathKind, can_copy_directory_path, can_copy_filename, can_copy_full_path,
+    copy_directory_path, copy_filename, copy_full_path,
+};
+use crate::commands::selection::{can_lowercase, can_uppercase};
 use crate::editor::scintilla;
 use crate::error::{AppError, Result};
 use crate::logging;
+use crate::platform::clipboard::WinClipboard;
+use crate::textops::trim::{trim_edges_spaces_tabs, trim_line_preserve_eol};
 use regex::RegexBuilder;
 
 const IDM_FILE_NEW: u16 = 99;
@@ -81,13 +91,18 @@ const IDM_EDIT_MOVE_LINE_UP: u16 = 308;
 const IDM_EDIT_MOVE_LINE_DOWN: u16 = 309;
 const IDM_EDIT_INDENT: u16 = 310;
 const IDM_EDIT_OUTDENT: u16 = 311;
-const IDM_EDIT_TRIM_TRAILING: u16 = 312;
+const CMD_TRIM_LEADING_TRAILING: u16 = 312;
 const IDM_EDIT_FIND: u16 = 320;
 const IDM_EDIT_FIND_NEXT: u16 = 321;
 const IDM_EDIT_FIND_PREV: u16 = 322;
 const IDM_EDIT_REPLACE: u16 = 323;
 const IDM_EDIT_REPLACE_ALL: u16 = 324;
 const IDM_EDIT_FIND_IN_FILES: u16 = 325;
+const CMD_TRANSFORM_UPPERCASE: u16 = 326;
+const CMD_TRANSFORM_LOWERCASE: u16 = 327;
+const CMD_COPY_FULL_PATH: u16 = 328;
+const CMD_COPY_FILENAME: u16 = 329;
+const CMD_COPY_DIRECTORY_PATH: u16 = 330;
 const IDM_VIEW_EDITOR_DARK: u16 = 340;
 const IDM_VIEW_TABS_HORIZONTAL: u16 = 341;
 const IDM_VIEW_TABS_VERTICAL_LEFT: u16 = 342;
@@ -120,6 +135,7 @@ const VK_H: u16 = 0x48;
 const VK_L: u16 = 0x4C;
 const VK_T: u16 = 0x54;
 const VK_V: u16 = 0x56;
+const VK_W: u16 = 0x57;
 const VK_X: u16 = 0x58;
 const VK_Y: u16 = 0x59;
 const VK_Z: u16 = 0x5A;
@@ -373,6 +389,8 @@ fn create_menu() -> Result<HMENU> {
             IDM_FILE_SAVE_ALL as usize,
             w!("Save All"),
         )?;
+        AppendMenuW(file_menu, MF_STRING, IDM_TAB_CLOSE as usize, w!("Close"))?;
+        AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(
             file_menu,
             MF_STRING,
@@ -433,6 +451,31 @@ fn create_menu() -> Result<HMENU> {
         AppendMenuW(edit_menu, MF_STRING, IDM_EDIT_CUT as usize, w!("Cut"))?;
         AppendMenuW(edit_menu, MF_STRING, IDM_EDIT_COPY as usize, w!("Copy"))?;
         AppendMenuW(edit_menu, MF_STRING, IDM_EDIT_PASTE as usize, w!("Paste"))?;
+        let copy_to_clipboard_menu = CreatePopupMenu()?;
+        AppendMenuW(
+            copy_to_clipboard_menu,
+            MF_STRING,
+            CMD_COPY_FULL_PATH as usize,
+            w!("Copy Full Path"),
+        )?;
+        AppendMenuW(
+            copy_to_clipboard_menu,
+            MF_STRING,
+            CMD_COPY_FILENAME as usize,
+            w!("Copy Filename"),
+        )?;
+        AppendMenuW(
+            copy_to_clipboard_menu,
+            MF_STRING,
+            CMD_COPY_DIRECTORY_PATH as usize,
+            w!("Copy Directory Path"),
+        )?;
+        AppendMenuW(
+            edit_menu,
+            MF_POPUP,
+            copy_to_clipboard_menu.0 as usize,
+            w!("Copy to Clipboard"),
+        )?;
         AppendMenuW(edit_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(
             edit_menu,
@@ -477,75 +520,10 @@ fn create_menu() -> Result<HMENU> {
         AppendMenuW(
             edit_menu,
             MF_STRING,
-            IDM_EDIT_TRIM_TRAILING as usize,
-            w!("Trim Trailing Whitespace"),
+            CMD_TRIM_LEADING_TRAILING as usize,
+            w!("Trim Leading + Trailing Whitespace"),
         )?;
         AppendMenuW(menu, MF_POPUP, edit_menu.0 as usize, w!("Edit"))?;
-
-        let view_menu = CreatePopupMenu()?;
-        let tabs_menu = CreatePopupMenu()?;
-        AppendMenuW(
-            tabs_menu,
-            MF_STRING,
-            IDM_VIEW_TABS_HORIZONTAL as usize,
-            w!("Horizontal (Top)"),
-        )?;
-        AppendMenuW(
-            tabs_menu,
-            MF_STRING,
-            IDM_VIEW_TABS_VERTICAL_LEFT as usize,
-            w!("Vertical (Left)"),
-        )?;
-        AppendMenuW(
-            tabs_menu,
-            MF_STRING,
-            IDM_VIEW_TABS_VERTICAL_RIGHT as usize,
-            w!("Vertical (Right)"),
-        )?;
-        AppendMenuW(view_menu, MF_POPUP, tabs_menu.0 as usize, w!("Tab Layout"))?;
-        AppendMenuW(
-            view_menu,
-            MF_STRING,
-            IDM_VIEW_TABS_CYCLE as usize,
-            w!("Cycle Tab Layout"),
-        )?;
-        AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
-        AppendMenuW(
-            view_menu,
-            MF_STRING,
-            IDM_VIEW_WORD_WRAP as usize,
-            w!("Word Wrap"),
-        )?;
-        AppendMenuW(
-            view_menu,
-            MF_STRING,
-            IDM_VIEW_ALWAYS_ON_TOP as usize,
-            w!("Always on Top"),
-        )?;
-        AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
-        AppendMenuW(
-            view_menu,
-            MF_STRING,
-            IDM_VIEW_EDITOR_DARK as usize,
-            w!("Editor Dark Mode (UI Light)"),
-        )?;
-        AppendMenuW(menu, MF_POPUP, view_menu.0 as usize, w!("View"))?;
-
-        let tab_menu = CreatePopupMenu()?;
-        AppendMenuW(tab_menu, MF_STRING, IDM_TAB_CLOSE as usize, w!("Close"))?;
-        AppendMenuW(
-            tab_menu,
-            MF_STRING,
-            IDM_TAB_CLOSE_OTHERS as usize,
-            w!("Close Others"),
-        )?;
-        AppendMenuW(
-            tab_menu,
-            MF_STRING,
-            IDM_TAB_CLOSE_RIGHT as usize,
-            w!("Close to Right"),
-        )?;
-        AppendMenuW(menu, MF_POPUP, tab_menu.0 as usize, w!("Tabs"))?;
 
         let help_menu = CreatePopupMenu()?;
         AppendMenuW(help_menu, MF_STRING, IDM_HELP_ABOUT as usize, w!("About"))?;
@@ -750,12 +728,17 @@ fn create_accelerators() -> Result<HACCEL> {
         ACCEL {
             fVirt: FVIRTKEY | FCONTROL | FSHIFT,
             key: VK_T,
-            cmd: IDM_EDIT_TRIM_TRAILING,
+            cmd: CMD_TRIM_LEADING_TRAILING,
         },
         ACCEL {
             fVirt: FVIRTKEY | FCONTROL | FSHIFT,
             key: VK_S,
             cmd: IDM_FILE_SAVE_ALL,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY | FCONTROL,
+            key: VK_W,
+            cmd: IDM_TAB_CLOSE,
         },
         ACCEL {
             fVirt: FVIRTKEY | FCONTROL | FALT,
@@ -777,6 +760,17 @@ fn message_loop(hwnd: HWND, accel: HACCEL) -> Result<()> {
         }
         if result.0 == 0 {
             break;
+        }
+        if message.message == WM_MBUTTONUP
+            && let Some(state) = get_state(hwnd)
+            && message.hwnd == state.tabs
+        {
+            if let Some(index) = tab_index_at_point(state.tabs, state.docs.len(), message.lParam)
+                && let Err(err) = close_tab(hwnd, state, index)
+            {
+                show_error("Rivet error", &err.to_string());
+            }
+            continue;
         }
         unsafe {
             if TranslateAcceleratorW(hwnd, accel, &message) == 0 {
@@ -865,6 +859,27 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 unsafe {
                     let _ = ReleaseCapture();
                 }
+            }
+            LRESULT(0)
+        }
+        WM_CONTEXTMENU => {
+            let source = HWND(wparam.0 as isize);
+            if let Some(state) = get_state(hwnd)
+                && doc_index_by_hwnd(state, source).is_some()
+            {
+                let (x, y) = context_menu_position(lparam);
+                if let Some(command_id) = show_editor_context_menu(hwnd, source, x, y) {
+                    unsafe {
+                        SendMessageW(hwnd, WM_COMMAND, WPARAM(command_id as usize), LPARAM(0));
+                    }
+                }
+                return LRESULT(0);
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
+        WM_INITMENUPOPUP => {
+            if let Some(state) = get_state(hwnd) {
+                update_copy_path_menu(hwnd, state);
             }
             LRESULT(0)
         }
@@ -981,6 +996,33 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
+                CMD_COPY_FULL_PATH => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Err(err) =
+                            copy_path_to_clipboard(hwnd, state, CopyPathKind::FullPath)
+                    {
+                        show_error("Rivet error", &err.to_string());
+                    }
+                    LRESULT(0)
+                }
+                CMD_COPY_FILENAME => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Err(err) =
+                            copy_path_to_clipboard(hwnd, state, CopyPathKind::FileName)
+                    {
+                        show_error("Rivet error", &err.to_string());
+                    }
+                    LRESULT(0)
+                }
+                CMD_COPY_DIRECTORY_PATH => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Err(err) =
+                            copy_path_to_clipboard(hwnd, state, CopyPathKind::DirectoryPath)
+                    {
+                        show_error("Rivet error", &err.to_string());
+                    }
+                    LRESULT(0)
+                }
                 IDM_EDIT_SELECT_ALL => {
                     if let Some(state) = get_state(hwnd)
                         && let Some(editor) = active_editor(state)
@@ -1037,12 +1079,27 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
-                IDM_EDIT_TRIM_TRAILING => {
+                CMD_TRANSFORM_UPPERCASE => {
                     if let Some(state) = get_state(hwnd)
                         && let Some(editor) = active_editor(state)
-                        && let Err(err) = scintilla::trim_trailing_whitespace(editor)
                     {
-                        show_error("Rivet error", &err.to_string());
+                        transform_selection_case(editor, true);
+                    }
+                    LRESULT(0)
+                }
+                CMD_TRANSFORM_LOWERCASE => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Some(editor) = active_editor(state)
+                    {
+                        transform_selection_case(editor, false);
+                    }
+                    LRESULT(0)
+                }
+                CMD_TRIM_LEADING_TRAILING => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Some(editor) = active_editor(state)
+                    {
+                        trim_leading_and_trailing_whitespace(editor);
                     }
                     LRESULT(0)
                 }
@@ -1909,6 +1966,104 @@ fn active_editor(state: &AppState) -> Option<HWND> {
     state.docs.get(state.active).map(|doc_tab| doc_tab.editor)
 }
 
+fn current_document_path(state: &AppState) -> Option<&Path> {
+    state
+        .docs
+        .get(state.active)
+        .and_then(|doc_tab| doc_tab.doc.path.as_deref())
+}
+
+fn transform_selection_case(editor: HWND, uppercase: bool) {
+    let start = scintilla::selection_start(editor);
+    let end = scintilla::selection_end(editor);
+    let can_transform = if uppercase {
+        can_uppercase(start as i64, end as i64)
+    } else {
+        can_lowercase(start as i64, end as i64)
+    };
+    if !can_transform {
+        return;
+    }
+    if uppercase {
+        scintilla::uppercase_selection(editor);
+    } else {
+        scintilla::lowercase_selection(editor);
+    }
+}
+
+fn trim_leading_and_trailing_whitespace(editor: HWND) {
+    let sel_start = scintilla::selection_start(editor);
+    let sel_end = scintilla::selection_end(editor);
+    let line_count = scintilla::line_count(editor);
+    if line_count == 0 {
+        return;
+    }
+
+    let (start_line, end_line) = if sel_start != sel_end {
+        let start_line = scintilla::line_from_position(editor, sel_start);
+        let mut end_line = scintilla::line_from_position(editor, sel_end);
+        if sel_end > sel_start {
+            let line_start = scintilla::position_from_line(editor, end_line);
+            if sel_end == line_start && end_line > start_line {
+                end_line = end_line.saturating_sub(1);
+            }
+        }
+        (start_line, end_line)
+    } else {
+        (0, line_count.saturating_sub(1))
+    };
+
+    if start_line > end_line {
+        return;
+    }
+
+    scintilla::begin_undo_action(editor);
+    for line in (start_line..=end_line).rev() {
+        trim_line_whitespace(editor, line);
+    }
+    scintilla::end_undo_action(editor);
+}
+
+fn trim_line_whitespace(editor: HWND, line: usize) {
+    let line_start = scintilla::position_from_line(editor, line);
+    let line_end = scintilla::line_end_position(editor, line);
+    if line_end <= line_start {
+        return;
+    }
+
+    let mut raw = Vec::with_capacity(line_end - line_start);
+    for pos in line_start..line_end {
+        raw.push(scintilla::char_at(editor, pos));
+    }
+    let line_text = String::from_utf8_lossy(&raw);
+    if trim_line_preserve_eol(&line_text) == line_text {
+        return;
+    }
+    let (trim_left, trim_right) = trim_edges_spaces_tabs(&line_text);
+
+    if trim_right > 0 {
+        scintilla::set_target_range(editor, line_end - trim_right, line_end);
+        scintilla::replace_target_empty(editor);
+    }
+    if trim_left > 0 {
+        scintilla::set_target_range(editor, line_start, line_start + trim_left);
+        scintilla::replace_target_empty(editor);
+    }
+}
+
+fn copy_path_to_clipboard(hwnd: HWND, state: &AppState, kind: CopyPathKind) -> Result<()> {
+    let mut clipboard = WinClipboard::new(hwnd);
+    let _ = match kind {
+        CopyPathKind::FullPath => copy_full_path(current_document_path(state), &mut clipboard),
+        CopyPathKind::FileName => copy_filename(current_document_path(state), &mut clipboard),
+        CopyPathKind::DirectoryPath => {
+            copy_directory_path(current_document_path(state), &mut clipboard)
+        }
+    }
+    .map_err(|err| AppError::new(format!("Copy path failed: {err}")))?;
+    Ok(())
+}
+
 fn show_find_dialog(hwnd: HWND, state: &mut AppState, find_only: bool) -> Result<()> {
     if let Some(dialog) = &state.find_dialog {
         unsafe {
@@ -2715,6 +2870,7 @@ fn select_tab(hwnd: HWND, state: &mut AppState, index: usize) {
     update_title(hwnd, state);
     update_status(state);
     update_wrap_menu(hwnd, state);
+    update_copy_path_menu(hwnd, state);
     layout_children(hwnd, state);
 }
 
@@ -2737,6 +2893,26 @@ fn tab_bar_height(state: &AppState) -> i32 {
     } else {
         (rect.bottom - rect.top).max(min_height)
     }
+}
+
+fn tab_index_at_point(tabs: HWND, count: usize, point: LPARAM) -> Option<usize> {
+    let x = lparam_x(point);
+    let y = lparam_y(point);
+    let mut rect = windows::Win32::Foundation::RECT::default();
+    for index in 0..count {
+        let result = unsafe {
+            SendMessageW(
+                tabs,
+                TCM_GETITEMRECT,
+                WPARAM(index),
+                LPARAM(&mut rect as *mut _ as isize),
+            )
+        };
+        if result.0 != 0 && x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom {
+            return Some(index);
+        }
+    }
+    None
 }
 
 fn doc_index_by_hwnd(state: &AppState, hwnd: HWND) -> Option<usize> {
@@ -3057,6 +3233,80 @@ fn lparam_x(lparam: LPARAM) -> i32 {
     (lparam.0 & 0xffff) as u16 as i16 as i32
 }
 
+fn lparam_y(lparam: LPARAM) -> i32 {
+    ((lparam.0 >> 16) & 0xffff) as u16 as i16 as i32
+}
+
+fn context_menu_position(lparam: LPARAM) -> (i32, i32) {
+    if lparam.0 == -1 {
+        let mut point = POINT::default();
+        if unsafe { GetCursorPos(&mut point) }.is_ok() {
+            (point.x, point.y)
+        } else {
+            (0, 0)
+        }
+    } else {
+        (lparam_x(lparam), lparam_y(lparam))
+    }
+}
+
+fn show_editor_context_menu(hwnd: HWND, editor: HWND, x: i32, y: i32) -> Option<u16> {
+    let menu = unsafe { CreatePopupMenu().ok()? };
+    unsafe {
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            CMD_TRANSFORM_UPPERCASE as usize,
+            w!("Uppercase"),
+        );
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            CMD_TRANSFORM_LOWERCASE as usize,
+            w!("Lowercase"),
+        );
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            CMD_TRIM_LEADING_TRAILING as usize,
+            w!("Trim Leading + Trailing Whitespace"),
+        );
+        let sel_start = scintilla::selection_start(editor) as i64;
+        let sel_end = scintilla::selection_end(editor) as i64;
+        let upper_flags = if can_uppercase(sel_start, sel_end) {
+            MF_BYCOMMAND | MF_ENABLED
+        } else {
+            MF_BYCOMMAND | MF_GRAYED
+        };
+        let lower_flags = if can_lowercase(sel_start, sel_end) {
+            MF_BYCOMMAND | MF_ENABLED
+        } else {
+            MF_BYCOMMAND | MF_GRAYED
+        };
+        let _ = EnableMenuItem(menu, CMD_TRANSFORM_UPPERCASE as u32, upper_flags);
+        let _ = EnableMenuItem(menu, CMD_TRANSFORM_LOWERCASE as u32, lower_flags);
+    }
+    let selected = unsafe {
+        TrackPopupMenu(
+            menu,
+            TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+            x,
+            y,
+            0,
+            hwnd,
+            None,
+        )
+    };
+    unsafe {
+        let _ = DestroyMenu(menu);
+    }
+    if selected.0 > 0 {
+        Some(selected.0 as u16)
+    } else {
+        None
+    }
+}
+
 fn menu_id(id: usize) -> HMENU {
     HMENU(id as isize)
 }
@@ -3214,6 +3464,38 @@ fn update_wrap_menu(hwnd: HWND, state: &AppState) {
         .map(|doc_tab| doc_tab.wrap_enabled)
         .unwrap_or(true);
     set_menu_check(menu, IDM_VIEW_WORD_WRAP, checked);
+}
+
+fn update_copy_path_menu(hwnd: HWND, state: &AppState) {
+    let menu = unsafe { GetMenu(hwnd) };
+    if menu.0 == 0 {
+        return;
+    }
+    let path = current_document_path(state);
+    let full_state = if can_copy_full_path(path) {
+        MF_ENABLED
+    } else {
+        MF_GRAYED
+    };
+    let file_state = if can_copy_filename(path) {
+        MF_ENABLED
+    } else {
+        MF_GRAYED
+    };
+    let dir_state = if can_copy_directory_path(path) {
+        MF_ENABLED
+    } else {
+        MF_GRAYED
+    };
+    unsafe {
+        EnableMenuItem(menu, CMD_COPY_FULL_PATH as u32, MF_BYCOMMAND | full_state);
+        EnableMenuItem(menu, CMD_COPY_FILENAME as u32, MF_BYCOMMAND | file_state);
+        EnableMenuItem(
+            menu,
+            CMD_COPY_DIRECTORY_PATH as u32,
+            MF_BYCOMMAND | dir_state,
+        );
+    }
 }
 
 fn update_always_on_top_menu(hwnd: HWND, state: &AppState) {
