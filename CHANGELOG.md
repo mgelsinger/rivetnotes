@@ -7,6 +7,22 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 - TBD.
 
+## [0.2.1] - 2026-03-01
+
+- Added a tab-bar right-click context menu with tab-scoped actions:
+  `Save`, `Save As...`, `Duplicate Tab`, `Close`, `Close Others`,
+  `Close Tabs to the Left`, and `Close Tabs to the Right`.
+- Implemented tab hit-testing on right click and selection handoff so actions
+  apply to the clicked tab.
+- Expanded the editor right-click context menu with standard commands:
+  `Undo`, `Redo`, `Cut`, `Copy`, `Paste`, `Delete`, and `Select All`,
+  while keeping text transform and trim actions available.
+- Added command enable/disable logic for editor context actions using Scintilla
+  capability queries (`SCI_CANUNDO`, `SCI_CANREDO`, `SCI_CANPASTE`,
+  and selection-state checks).
+- Added Scintilla wrapper functions/constants needed for context-menu command
+  state and delete behavior.
+
 ## [0.2.0] - 2026-03-01
 
 - Added parent-owned editor context menu with exactly three commands:

@@ -24,6 +24,7 @@ const SCI_GETCOLUMN: u32 = 2129;
 const SCI_GETLINEENDPOSITION: u32 = 2136;
 const SCI_GETSELECTIONSTART: u32 = 2143;
 const SCI_GETSELECTIONEND: u32 = 2145;
+const SCI_GETSELECTIONEMPTY: u32 = 2650;
 const SCI_GETLINECOUNT: u32 = 2154;
 const SCI_LINEFROMPOSITION: u32 = 2166;
 const SCI_POSITIONFROMLINE: u32 = 2167;
@@ -38,11 +39,15 @@ const SCI_GOTOLINE: u32 = 2024;
 const SCI_GOTOPOS: u32 = 2025;
 const SCI_SETSAVEPOINT: u32 = 2014;
 const SCI_GETMODIFY: u32 = 2159;
+const SCI_CANREDO: u32 = 2016;
 const SCI_UNDO: u32 = 2176;
 const SCI_REDO: u32 = 2011;
 const SCI_CUT: u32 = 2177;
 const SCI_COPY: u32 = 2178;
 const SCI_PASTE: u32 = 2179;
+const SCI_CLEAR: u32 = 2180;
+const SCI_CANPASTE: u32 = 2173;
+const SCI_CANUNDO: u32 = 2174;
 const SCI_SELECTALL: u32 = 2013;
 const SCI_LINEDUPLICATE: u32 = 2404;
 const SCI_LINEDELETE: u32 = 2338;
@@ -371,6 +376,14 @@ pub fn is_modified(hwnd: HWND) -> bool {
     send_message(hwnd, SCI_GETMODIFY, 0, 0).0 != 0
 }
 
+pub fn can_undo(hwnd: HWND) -> bool {
+    send_message(hwnd, SCI_CANUNDO, 0, 0).0 != 0
+}
+
+pub fn can_redo(hwnd: HWND) -> bool {
+    send_message(hwnd, SCI_CANREDO, 0, 0).0 != 0
+}
+
 pub fn undo(hwnd: HWND) {
     send_message(hwnd, SCI_UNDO, 0, 0);
 }
@@ -389,6 +402,14 @@ pub fn copy(hwnd: HWND) {
 
 pub fn paste(hwnd: HWND) {
     send_message(hwnd, SCI_PASTE, 0, 0);
+}
+
+pub fn clear(hwnd: HWND) {
+    send_message(hwnd, SCI_CLEAR, 0, 0);
+}
+
+pub fn can_paste(hwnd: HWND) -> bool {
+    send_message(hwnd, SCI_CANPASTE, 0, 0).0 != 0
 }
 
 pub fn select_all(hwnd: HWND) {
@@ -425,6 +446,10 @@ pub fn selection_start(hwnd: HWND) -> usize {
 
 pub fn selection_end(hwnd: HWND) -> usize {
     send_message(hwnd, SCI_GETSELECTIONEND, 0, 0).0 as usize
+}
+
+pub fn selection_empty(hwnd: HWND) -> bool {
+    send_message(hwnd, SCI_GETSELECTIONEMPTY, 0, 0).0 != 0
 }
 
 pub fn uppercase_selection(hwnd: HWND) {

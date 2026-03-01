@@ -10,7 +10,8 @@ use windows::Win32::Foundation::{
     WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
-    CreateSolidBrush, DeleteObject, HBRUSH, HDC, InvalidateRect, SetBkColor, SetTextColor,
+    CreateSolidBrush, DeleteObject, HBRUSH, HDC, InvalidateRect, ScreenToClient, SetBkColor,
+    SetTextColor,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -19,9 +20,10 @@ use windows::Win32::UI::Controls::Dialogs::{
     OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 use windows::Win32::UI::Controls::{
-    ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, NMHDR, SB_SETPARTS, SB_SETTEXTW,
-    STATUSCLASSNAMEW, TCIF_TEXT, TCITEMW, TCM_DELETEITEM, TCM_GETCURSEL, TCM_GETITEMRECT,
-    TCM_INSERTITEMW, TCM_SETCURSEL, TCM_SETITEMW, TCN_SELCHANGE, WC_TABCONTROLW,
+    ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, NM_RCLICK, NMHDR, SB_SETPARTS,
+    SB_SETTEXTW, STATUSCLASSNAMEW, TCHITTESTINFO, TCIF_TEXT, TCITEMW, TCM_DELETEITEM,
+    TCM_GETCURSEL, TCM_GETITEMRECT, TCM_HITTEST, TCM_INSERTITEMW, TCM_SETCURSEL, TCM_SETITEMW,
+    TCN_SELCHANGE, WC_TABCONTROLW,
 };
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, SetProcessDpiAwarenessContext,
@@ -113,6 +115,9 @@ const IDM_VIEW_ALWAYS_ON_TOP: u16 = 346;
 const IDM_TAB_CLOSE: u16 = 220;
 const IDM_TAB_CLOSE_OTHERS: u16 = 221;
 const IDM_TAB_CLOSE_RIGHT: u16 = 222;
+const CMD_TAB_DUPLICATE: u16 = 223;
+const CMD_TAB_CLOSE_LEFT: u16 = 224;
+const CMD_EDITOR_DELETE: u16 = 331;
 const IDM_HELP_ABOUT: u16 = 400;
 
 const TIMER_SESSION_ID: usize = 1;
@@ -191,6 +196,7 @@ unsafe extern "system" {
 struct DocTab {
     editor: HWND,
     doc: Document,
+    display_name: Option<String>,
     dirty: bool,
     wrap_enabled: bool,
     word_count: Option<usize>,
@@ -996,6 +1002,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
+                CMD_EDITOR_DELETE => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Some(editor) = active_editor(state)
+                    {
+                        scintilla::clear(editor);
+                    }
+                    LRESULT(0)
+                }
                 CMD_COPY_FULL_PATH => {
                     if let Some(state) = get_state(hwnd)
                         && let Err(err) =
@@ -1229,6 +1243,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
+                CMD_TAB_CLOSE_LEFT => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Err(err) = close_tabs_to_left(hwnd, state)
+                    {
+                        show_error("Rivet error", &err.to_string());
+                    }
+                    LRESULT(0)
+                }
+                CMD_TAB_DUPLICATE => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Err(err) = duplicate_active_tab(hwnd, state)
+                    {
+                        show_error("Rivet error", &err.to_string());
+                    }
+                    LRESULT(0)
+                }
                 IDM_FILE_EXIT => {
                     if let Some(state) = get_state(hwnd)
                         && confirm_close_all(hwnd, state).unwrap_or(true)
@@ -1261,6 +1291,26 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_NOTIFY => {
             let nmhdr = unsafe { &*(lparam.0 as *const NMHDR) };
             if nmhdr.hwndFrom != HWND(0) {
+                if let Some(state) = get_state(hwnd)
+                    && nmhdr.hwndFrom == state.tabs
+                    && nmhdr.code == NM_RCLICK
+                {
+                    if let Some((index, x, y)) = tab_hit_test_at_cursor(state.tabs) {
+                        select_tab(hwnd, state, index);
+                        if let Some(command_id) = show_tab_context_menu(hwnd, state, index, x, y) {
+                            unsafe {
+                                SendMessageW(
+                                    hwnd,
+                                    WM_COMMAND,
+                                    WPARAM(command_id as usize),
+                                    LPARAM(0),
+                                );
+                            }
+                        }
+                    }
+                    return LRESULT(0);
+                }
+
                 if nmhdr.code == TCN_SELCHANGE {
                     if let Some(state) = get_state(hwnd) {
                         let index = unsafe {
@@ -1745,6 +1795,7 @@ fn save_document_at(
 
     let stamp = document::FileStamp::from_path(&path)?;
     doc_tab.doc.path = Some(path);
+    doc_tab.display_name = None;
     doc_tab
         .doc
         .update_after_save(encoding, doc_tab.doc.eol, stamp);
@@ -2689,6 +2740,7 @@ fn create_doc_from_path(parent: HWND, instance: HINSTANCE, path: PathBuf) -> Res
     let mut doc_tab = DocTab {
         editor,
         doc: Document::new_empty(),
+        display_name: None,
         dirty: false,
         wrap_enabled: true,
         word_count: Some(0),
@@ -2715,6 +2767,7 @@ fn load_file_into_doc(doc_tab: &mut DocTab, path: &PathBuf) -> Result<()> {
     doc_tab
         .doc
         .update_from_load(path.clone(), encoding, eol, stamp, large_file_mode);
+    doc_tab.display_name = None;
     doc_tab.dirty = false;
     doc_tab.word_count = if large_file_mode {
         None
@@ -2729,6 +2782,7 @@ fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Re
     let doc_tab = DocTab {
         editor,
         doc: Document::new_empty(),
+        display_name: None,
         dirty: false,
         wrap_enabled: true,
         word_count: Some(0),
@@ -2743,15 +2797,59 @@ fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Re
     Ok(())
 }
 
-fn tab_title(doc_tab: &DocTab) -> String {
-    let mut title = if let Some(path) = &doc_tab.doc.path {
+fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
+    let source = state
+        .docs
+        .get(state.active)
+        .ok_or_else(|| AppError::new("No active document."))?;
+    let text = scintilla::get_text(source.editor)?;
+    let instance = module_instance()?;
+    let editor = create_editor(hwnd, instance)?;
+    scintilla::set_text(editor, &text)?;
+    scintilla::set_eol_mode(editor, source.doc.eol);
+    scintilla::set_wrap_enabled(editor, source.wrap_enabled);
+
+    let mut doc = Document::new_empty();
+    doc.encoding = source.doc.encoding;
+    doc.eol = source.doc.eol;
+    doc.large_file_mode = document::is_large_file(text.len() as u64);
+
+    let copy_name = format!("Copy of {}", tab_base_name(source));
+    let doc_tab = DocTab {
+        editor,
+        doc,
+        display_name: Some(copy_name),
+        dirty: true,
+        wrap_enabled: source.wrap_enabled && !source.doc.large_file_mode,
+        word_count: if source.doc.large_file_mode {
+            None
+        } else {
+            Some(count_words(&text))
+        },
+    };
+    let lexer = lexer_for_doc(&source.doc);
+    scintilla::apply_lexer(doc_tab.editor, lexer, state.editor_dark);
+
+    let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
+    select_tab(hwnd, state, index);
+    Ok(())
+}
+
+fn tab_base_name(doc_tab: &DocTab) -> String {
+    if let Some(display_name) = &doc_tab.display_name {
+        display_name.clone()
+    } else if let Some(path) = &doc_tab.doc.path {
         path.file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("Untitled")
             .to_string()
     } else {
         "Untitled".to_string()
-    };
+    }
+}
+
+fn tab_title(doc_tab: &DocTab) -> String {
+    let mut title = tab_base_name(doc_tab);
     if doc_tab.dirty {
         title = format!("• {title}");
     }
@@ -3005,6 +3103,21 @@ fn close_other_tabs(hwnd: HWND, state: &mut AppState) -> Result<()> {
     Ok(())
 }
 
+fn close_tabs_to_left(hwnd: HWND, state: &mut AppState) -> Result<()> {
+    let active = state.active;
+    if active == 0 || state.docs.len() <= 1 {
+        return Ok(());
+    }
+    let mut index = active;
+    while index > 0 {
+        index -= 1;
+        if !close_tab(hwnd, state, index)? {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
 fn close_tabs_to_right(hwnd: HWND, state: &mut AppState) -> Result<()> {
     let active = state.active;
     if active + 1 >= state.docs.len() {
@@ -3250,9 +3363,146 @@ fn context_menu_position(lparam: LPARAM) -> (i32, i32) {
     }
 }
 
+fn tab_hit_test_at_cursor(tabs: HWND) -> Option<(usize, i32, i32)> {
+    let mut screen = POINT::default();
+    if unsafe { GetCursorPos(&mut screen) }.is_err() {
+        return None;
+    }
+    let mut client = screen;
+    unsafe {
+        let _ = ScreenToClient(tabs, &mut client);
+    }
+    let mut hit = TCHITTESTINFO {
+        pt: client,
+        ..Default::default()
+    };
+    let index = unsafe {
+        SendMessageW(
+            tabs,
+            TCM_HITTEST,
+            WPARAM(0),
+            LPARAM(&mut hit as *mut TCHITTESTINFO as isize),
+        )
+    }
+    .0 as i32;
+    if index < 0 {
+        None
+    } else {
+        Some((index as usize, screen.x, screen.y))
+    }
+}
+
+fn show_tab_context_menu(
+    hwnd: HWND,
+    state: &AppState,
+    index: usize,
+    x: i32,
+    y: i32,
+) -> Option<u16> {
+    let doc = state.docs.get(index)?;
+    let is_dirty = scintilla::is_modified(doc.editor);
+    let has_path = doc.doc.path.is_some();
+    let only_one = state.docs.len() <= 1;
+    let is_first = index == 0;
+    let is_last = index + 1 >= state.docs.len();
+
+    let menu = unsafe { CreatePopupMenu().ok()? };
+    unsafe {
+        let _ = AppendMenuW(menu, MF_STRING, IDM_FILE_SAVE as usize, w!("Save"));
+        let _ = AppendMenuW(menu, MF_STRING, IDM_FILE_SAVE_AS as usize, w!("Save As..."));
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            CMD_TAB_DUPLICATE as usize,
+            w!("Duplicate Tab"),
+        );
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        let _ = AppendMenuW(menu, MF_STRING, IDM_TAB_CLOSE as usize, w!("Close"));
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            IDM_TAB_CLOSE_OTHERS as usize,
+            w!("Close Others"),
+        );
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            CMD_TAB_CLOSE_LEFT as usize,
+            w!("Close Tabs to the Left"),
+        );
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            IDM_TAB_CLOSE_RIGHT as usize,
+            w!("Close Tabs to the Right"),
+        );
+
+        let save_flags = if is_dirty || !has_path {
+            MF_BYCOMMAND | MF_ENABLED
+        } else {
+            MF_BYCOMMAND | MF_GRAYED
+        };
+        let _ = EnableMenuItem(menu, IDM_FILE_SAVE as u32, save_flags);
+
+        let others_flags = if only_one {
+            MF_BYCOMMAND | MF_GRAYED
+        } else {
+            MF_BYCOMMAND | MF_ENABLED
+        };
+        let _ = EnableMenuItem(menu, IDM_TAB_CLOSE_OTHERS as u32, others_flags);
+
+        let left_flags = if only_one || is_first {
+            MF_BYCOMMAND | MF_GRAYED
+        } else {
+            MF_BYCOMMAND | MF_ENABLED
+        };
+        let right_flags = if only_one || is_last {
+            MF_BYCOMMAND | MF_GRAYED
+        } else {
+            MF_BYCOMMAND | MF_ENABLED
+        };
+        let _ = EnableMenuItem(menu, CMD_TAB_CLOSE_LEFT as u32, left_flags);
+        let _ = EnableMenuItem(menu, IDM_TAB_CLOSE_RIGHT as u32, right_flags);
+    }
+
+    let selected = unsafe {
+        TrackPopupMenu(
+            menu,
+            TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+            x,
+            y,
+            0,
+            hwnd,
+            None,
+        )
+    };
+    unsafe {
+        let _ = DestroyMenu(menu);
+    }
+    if selected.0 > 0 {
+        Some(selected.0 as u16)
+    } else {
+        None
+    }
+}
+
 fn show_editor_context_menu(hwnd: HWND, editor: HWND, x: i32, y: i32) -> Option<u16> {
     let menu = unsafe { CreatePopupMenu().ok()? };
     unsafe {
+        let _ = AppendMenuW(menu, MF_STRING, IDM_EDIT_UNDO as usize, w!("Undo"));
+        let _ = AppendMenuW(menu, MF_STRING, IDM_EDIT_REDO as usize, w!("Redo"));
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        let _ = AppendMenuW(menu, MF_STRING, IDM_EDIT_CUT as usize, w!("Cut"));
+        let _ = AppendMenuW(menu, MF_STRING, IDM_EDIT_COPY as usize, w!("Copy"));
+        let _ = AppendMenuW(menu, MF_STRING, IDM_EDIT_PASTE as usize, w!("Paste"));
+        let _ = AppendMenuW(menu, MF_STRING, CMD_EDITOR_DELETE as usize, w!("Delete"));
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            IDM_EDIT_SELECT_ALL as usize,
+            w!("Select All"),
+        );
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(
             menu,
             MF_STRING,
@@ -3271,8 +3521,29 @@ fn show_editor_context_menu(hwnd: HWND, editor: HWND, x: i32, y: i32) -> Option<
             CMD_TRIM_LEADING_TRAILING as usize,
             w!("Trim Leading + Trailing Whitespace"),
         );
+        let has_selection = !scintilla::selection_empty(editor);
         let sel_start = scintilla::selection_start(editor) as i64;
         let sel_end = scintilla::selection_end(editor) as i64;
+        let undo_flags = if scintilla::can_undo(editor) {
+            MF_BYCOMMAND | MF_ENABLED
+        } else {
+            MF_BYCOMMAND | MF_GRAYED
+        };
+        let redo_flags = if scintilla::can_redo(editor) {
+            MF_BYCOMMAND | MF_ENABLED
+        } else {
+            MF_BYCOMMAND | MF_GRAYED
+        };
+        let cut_copy_delete_flags = if has_selection {
+            MF_BYCOMMAND | MF_ENABLED
+        } else {
+            MF_BYCOMMAND | MF_GRAYED
+        };
+        let paste_flags = if scintilla::can_paste(editor) {
+            MF_BYCOMMAND | MF_ENABLED
+        } else {
+            MF_BYCOMMAND | MF_GRAYED
+        };
         let upper_flags = if can_uppercase(sel_start, sel_end) {
             MF_BYCOMMAND | MF_ENABLED
         } else {
@@ -3283,6 +3554,12 @@ fn show_editor_context_menu(hwnd: HWND, editor: HWND, x: i32, y: i32) -> Option<
         } else {
             MF_BYCOMMAND | MF_GRAYED
         };
+        let _ = EnableMenuItem(menu, IDM_EDIT_UNDO as u32, undo_flags);
+        let _ = EnableMenuItem(menu, IDM_EDIT_REDO as u32, redo_flags);
+        let _ = EnableMenuItem(menu, IDM_EDIT_CUT as u32, cut_copy_delete_flags);
+        let _ = EnableMenuItem(menu, IDM_EDIT_COPY as u32, cut_copy_delete_flags);
+        let _ = EnableMenuItem(menu, CMD_EDITOR_DELETE as u32, cut_copy_delete_flags);
+        let _ = EnableMenuItem(menu, IDM_EDIT_PASTE as u32, paste_flags);
         let _ = EnableMenuItem(menu, CMD_TRANSFORM_UPPERCASE as u32, upper_flags);
         let _ = EnableMenuItem(menu, CMD_TRANSFORM_LOWERCASE as u32, lower_flags);
     }
