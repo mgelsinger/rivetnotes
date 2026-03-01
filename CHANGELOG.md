@@ -7,6 +7,30 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 - TBD.
 
+## [0.3.0] - 2026-03-01
+
+- Implemented Notepad++-style `remember_session` + `session_snapshot_periodic_backup`
+  behavior with default-on periodic backups and no save prompts on exit when enabled.
+- Added crash-resilient atomic writes for backup and session files
+  (`ReplaceFileW` with `MoveFileExW` fallback), plus startup cleanup for stale temp files.
+- Implemented backup-first restore semantics for dirty tabs at shutdown and full-tab
+  session restoration (named and untitled documents).
+- Added global `View` menu with checkable toggles for `Word Wrap` and `Always On Top`,
+  with persisted settings and startup re-application.
+- Upgraded find/replace internals to `SCI_SEARCHINTARGET`-based search with grouped
+  `Replace All` undo behavior and Notepad++-style replace flow.
+- Updated status bar fields to show authoritative editor state:
+  `Ln/Col`, `Sel`, `EOL`, `ENC`, and dirty indicator.
+- Added `Help -> About Rivet` modal with version, git SHA, build UTC, source URL,
+  and local data directory, including copy-to-clipboard action.
+- Added build metadata injection in `build.rs`
+  (`RIVET_VERSION`, `RIVET_GIT_SHA`, `RIVET_BUILD_UTC`, `RIVET_SOURCE_URL`).
+- Hardened CI with separate `fmt`, `clippy`, `test`, and scheduled RustSec `cargo audit`
+  workflow jobs.
+- Added release compliance assets:
+  `NOTICE.txt` and `THIRD_PARTY_NOTICES/Scintilla-Lexilla-License.txt`,
+  and included them in portable + installer packaging.
+
 ## [0.2.1] - 2026-03-01
 
 - Added a tab-bar right-click context menu with tab-scoped actions:

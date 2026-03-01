@@ -38,7 +38,6 @@ const SCI_SETMARGINRIGHT: u32 = 2157;
 const SCI_GOTOLINE: u32 = 2024;
 const SCI_GOTOPOS: u32 = 2025;
 const SCI_SETSAVEPOINT: u32 = 2014;
-const SCI_GETMODIFY: u32 = 2159;
 const SCI_CANREDO: u32 = 2016;
 const SCI_UNDO: u32 = 2176;
 const SCI_REDO: u32 = 2011;
@@ -58,17 +57,20 @@ const SCI_BACKTAB: u32 = 2328;
 const SCI_BEGINUNDOACTION: u32 = 2078;
 const SCI_ENDUNDOACTION: u32 = 2079;
 const SCI_SETSEL: u32 = 2160;
-const SCI_REPLACESEL: u32 = 2170;
 const SCI_SETTARGETRANGE: u32 = 2686;
 const SCI_REPLACETARGET: u32 = 2194;
 const SCI_SETSEARCHFLAGS: u32 = 2198;
-const SCI_SEARCHNEXT: u32 = 2367;
-const SCI_SEARCHPREV: u32 = 2368;
 const SCI_LOWERCASE: u32 = 2340;
 const SCI_UPPERCASE: u32 = 2341;
 const SCI_USEPOPUP: u32 = 2371;
 const SCI_SETEOLMODE: u32 = 2031;
+const SCI_GETEOLMODE: u32 = 2030;
+const SCI_GETCODEPAGE: u32 = 2137;
 const SCI_SETWRAPMODE: u32 = 2268;
+const SCI_GETSELTEXT: u32 = 2161;
+const SCI_GETTARGETSTART: u32 = 2191;
+const SCI_GETTARGETEND: u32 = 2193;
+const SCI_SEARCHINTARGET: u32 = 2197;
 const SCI_STYLECLEARALL: u32 = 2050;
 const SCI_STYLESETFORE: u32 = 2051;
 const SCI_STYLESETBACK: u32 = 2052;
@@ -88,7 +90,7 @@ const SCI_SETILEXER: u32 = 4033;
 
 const SC_CP_UTF8: usize = 65001;
 const SC_EOL_CRLF: usize = 0;
-const SC_EOL_LF: usize = 1;
+const SC_EOL_LF: usize = 2;
 const SC_WRAP_NONE: usize = 0;
 const SC_WRAP_WORD: usize = 1;
 const SC_MARGIN_SYMBOL: usize = 0;
@@ -372,10 +374,6 @@ pub fn set_savepoint(hwnd: HWND) {
     send_message(hwnd, SCI_SETSAVEPOINT, 0, 0);
 }
 
-pub fn is_modified(hwnd: HWND) -> bool {
-    send_message(hwnd, SCI_GETMODIFY, 0, 0).0 != 0
-}
-
 pub fn can_undo(hwnd: HWND) -> bool {
     send_message(hwnd, SCI_CANUNDO, 0, 0).0 != 0
 }
@@ -493,43 +491,29 @@ pub fn replace_target_empty(hwnd: HWND) {
     send_message(hwnd, SCI_REPLACETARGET, 0, EMPTY.as_ptr() as isize);
 }
 
-pub fn search_next(hwnd: HWND, text: &str, flags: usize, wrap: bool) -> bool {
-    if text.is_empty() {
-        return false;
-    }
-    send_message(hwnd, SCI_SETSEARCHFLAGS, flags, 0);
-    let mut buffer = Vec::from(text.as_bytes());
-    buffer.push(0);
-    let pos = send_message(hwnd, SCI_SEARCHNEXT, flags, buffer.as_ptr() as isize).0;
-    if pos >= 0 {
-        return true;
-    }
-    if wrap {
-        set_selection(hwnd, 0, 0);
-        let pos = send_message(hwnd, SCI_SEARCHNEXT, flags, buffer.as_ptr() as isize).0;
-        return pos >= 0;
-    }
-    false
+pub fn replace_target(hwnd: HWND, text: &str) {
+    send_message(hwnd, SCI_REPLACETARGET, text.len(), text.as_ptr() as isize);
 }
 
-pub fn search_prev(hwnd: HWND, text: &str, flags: usize, wrap: bool) -> bool {
+pub fn search_in_target(
+    hwnd: HWND,
+    text: &str,
+    flags: usize,
+    start: usize,
+    end: usize,
+) -> Option<(usize, usize)> {
     if text.is_empty() {
-        return false;
+        return None;
     }
     send_message(hwnd, SCI_SETSEARCHFLAGS, flags, 0);
-    let mut buffer = Vec::from(text.as_bytes());
-    buffer.push(0);
-    let pos = send_message(hwnd, SCI_SEARCHPREV, flags, buffer.as_ptr() as isize).0;
-    if pos >= 0 {
-        return true;
+    set_target_range(hwnd, start, end);
+    let pos = send_message(hwnd, SCI_SEARCHINTARGET, text.len(), text.as_ptr() as isize).0;
+    if pos < 0 {
+        return None;
     }
-    if wrap {
-        let end = get_length(hwnd);
-        set_selection(hwnd, end, end);
-        let pos = send_message(hwnd, SCI_SEARCHPREV, flags, buffer.as_ptr() as isize).0;
-        return pos >= 0;
-    }
-    false
+    let target_start = send_message(hwnd, SCI_GETTARGETSTART, 0, 0).0 as usize;
+    let target_end = send_message(hwnd, SCI_GETTARGETEND, 0, 0).0 as usize;
+    Some((target_start, target_end))
 }
 
 pub fn set_selection(hwnd: HWND, start: usize, end: usize) {
@@ -538,10 +522,14 @@ pub fn set_selection(hwnd: HWND, start: usize, end: usize) {
     send_message(hwnd, SCI_SETSEL, start_param, end_param);
 }
 
-pub fn replace_selection(hwnd: HWND, text: &str) {
-    let mut buffer = Vec::from(text.as_bytes());
-    buffer.push(0);
-    send_message(hwnd, SCI_REPLACESEL, 0, buffer.as_ptr() as isize);
+pub fn selected_text(hwnd: HWND) -> Result<String> {
+    let start = selection_start(hwnd);
+    let end = selection_end(hwnd);
+    let len = end.abs_diff(start);
+    let mut buffer = vec![0u8; len + 1];
+    send_message(hwnd, SCI_GETSELTEXT, 0, buffer.as_mut_ptr() as isize);
+    buffer.truncate(len);
+    String::from_utf8(buffer).map_err(|err| AppError::new(format!("Invalid UTF-8 text: {err}")))
 }
 
 pub fn get_length(hwnd: HWND) -> usize {
@@ -554,6 +542,14 @@ pub fn set_eol_mode(hwnd: HWND, eol: Eol) {
         Eol::Lf => SC_EOL_LF,
     };
     send_message(hwnd, SCI_SETEOLMODE, mode, 0);
+}
+
+pub fn get_eol_mode(hwnd: HWND) -> i32 {
+    send_message(hwnd, SCI_GETEOLMODE, 0, 0).0 as i32
+}
+
+pub fn get_codepage(hwnd: HWND) -> i32 {
+    send_message(hwnd, SCI_GETCODEPAGE, 0, 0).0 as i32
 }
 
 pub fn set_wrap_enabled(hwnd: HWND, enabled: bool) {

@@ -1,0 +1,13 @@
+Rivet Third-Party Notices
+
+This distribution includes third-party software and associated license terms.
+
+Included third-party components:
+
+1. Scintilla / Lexilla
+   Copyright (c) Neil Hodgson
+   License text: THIRD_PARTY_NOTICES/Scintilla-Lexilla-License.txt
+
+2. Rust crate dependencies
+   Cargo dependencies are listed in Cargo.toml and Cargo.lock.
+   For releases, generate and ship a full crate attribution report.

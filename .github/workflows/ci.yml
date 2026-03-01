@@ -4,9 +4,11 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  schedule:
+    - cron: "17 3 * * *"
 
 jobs:
-  windows:
+  check-format:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,10 +16,41 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          components: rustfmt, clippy
+          components: rustfmt
       - name: Format
         run: cargo fmt --check
+
+  clippy:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
       - name: Clippy
         run: cargo clippy -- -D warnings
+
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
       - name: Test
         run: cargo test
+
+  audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: RustSec audit
+        uses: actions-rust-lang/audit@v1

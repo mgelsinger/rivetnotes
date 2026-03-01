@@ -11,6 +11,7 @@ mod editor;
 mod error;
 mod logging;
 mod platform;
+mod storage;
 mod textops;
 
 fn main() {

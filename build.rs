@@ -1,6 +1,12 @@
 use std::path::PathBuf;
+use std::process::Command;
+
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 fn main() {
+    emit_build_metadata();
+
     let base = PathBuf::from("third_party/scintilla");
     let src = base.join("src");
     let win32 = base.join("win32");
@@ -158,4 +164,61 @@ fn main() {
             res.compile().expect("Failed to compile Windows resources");
         }
     }
+}
+
+fn emit_build_metadata() {
+    let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "unknown".to_string());
+    println!("cargo:rustc-env=RIVET_VERSION={version}");
+
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    let git_sha = git_output(["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".into());
+    println!("cargo:rustc-env=RIVET_GIT_SHA={git_sha}");
+
+    let build_utc = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "unknown".to_string());
+    println!("cargo:rustc-env=RIVET_BUILD_UTC={build_utc}");
+
+    let source_url = std::env::var("CARGO_PKG_REPOSITORY")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| git_output(["config", "--get", "remote.origin.url"]))
+        .map(|value| normalize_git_url(&value))
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=RIVET_SOURCE_URL={source_url}");
+}
+
+fn git_output<const N: usize>(args: [&str; N]) -> Option<String> {
+    let output = Command::new("git").args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn normalize_git_url(input: &str) -> String {
+    let trimmed = input.trim();
+    if let Some(rest) = trimmed.strip_prefix("git@")
+        && let Some((host, path)) = rest.split_once(':')
+    {
+        let path = path.strip_suffix(".git").unwrap_or(path);
+        return format!("https://{host}/{path}");
+    }
+    if let Some(rest) = trimmed.strip_prefix("ssh://git@")
+        && let Some((host, path)) = rest.split_once('/')
+    {
+        let path = path.strip_suffix(".git").unwrap_or(path);
+        return format!("https://{host}/{path}");
+    }
+    if let Some(rest) = trimmed.strip_prefix("https://") {
+        let normalized = rest.strip_suffix(".git").unwrap_or(rest);
+        return format!("https://{normalized}");
+    }
+    trimmed.to_string()
 }

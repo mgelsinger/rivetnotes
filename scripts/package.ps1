@@ -37,12 +37,14 @@ New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
 
 Copy-Item $exePath (Join-Path $stagingDir "rivet.exe") -Force
 Copy-Item "LICENSE" (Join-Path $stagingDir "LICENSE") -Force
+Copy-Item "NOTICE.txt" (Join-Path $stagingDir "NOTICE.txt") -Force
 Copy-Item "README.md" (Join-Path $stagingDir "README.md") -Force
 if (Test-Path "CHANGELOG.md") {
     Copy-Item "CHANGELOG.md" (Join-Path $stagingDir "CHANGELOG.md") -Force
 }
 Copy-Item (Join-Path $scriptDir "install.ps1") (Join-Path $stagingDir "install.ps1") -Force
 Copy-Item (Join-Path $scriptDir "uninstall.ps1") (Join-Path $stagingDir "uninstall.ps1") -Force
+Copy-Item "THIRD_PARTY_NOTICES" (Join-Path $stagingDir "THIRD_PARTY_NOTICES") -Recurse -Force
 
 $zipPath = Join-Path $distDir "$stagingName.zip"
 if (Test-Path $zipPath) {

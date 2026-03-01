@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use windows::Win32::Foundation::{
     COLORREF, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, POINT,
@@ -43,18 +43,18 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HMENU, HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL, ICON_SMALL2, IDC_ARROW, IDC_SIZEWE,
     IDI_APPLICATION, IDNO, IDYES, IMAGE_ICON, KillTimer, LB_ADDSTRING, LB_GETCURSEL,
     LB_RESETCONTENT, LB_SETCURSEL, LBN_DBLCLK, LBN_SELCHANGE, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY,
-    LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW, LoadImageW, MB_ICONERROR, MB_ICONWARNING,
-    MB_OK, MB_YESNO, MB_YESNOCANCEL, MF_BYCOMMAND, MF_CHECKED, MF_ENABLED, MF_GRAYED, MF_POPUP,
-    MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MessageBoxW, PostQuitMessage, RegisterClassExW,
-    SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SYSTEM_METRICS_INDEX, SendMessageW, SetClassLongPtrW, SetCursor, SetTimer,
-    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE,
-    WM_ACTIVATEAPP, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLORLISTBOX,
-    WM_DESTROY, WM_DROPFILES, WM_GETICON, WM_INITMENUPOPUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_SETCURSOR, WM_SETICON, WM_SIZE,
-    WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
-    WS_VISIBLE, WS_VSCROLL,
+    LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW, LoadImageW, MB_ICONERROR,
+    MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL, MF_BYCOMMAND, MF_CHECKED,
+    MF_ENABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MessageBoxW,
+    PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE,
+    SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SYSTEM_METRICS_INDEX, SendMessageW,
+    SetClassLongPtrW, SetCursor, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
+    ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WM_ACTIVATEAPP, WM_CLOSE, WM_COMMAND,
+    WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLORLISTBOX, WM_DESTROY, WM_DROPFILES, WM_GETICON,
+    WM_INITMENUPOPUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY,
+    WM_NOTIFY, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CHILD,
+    WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::PWSTR;
 use windows::core::{HSTRING, PCWSTR, w};
@@ -69,7 +69,7 @@ use crate::commands::selection::{can_lowercase, can_uppercase};
 use crate::editor::scintilla;
 use crate::error::{AppError, Result};
 use crate::logging;
-use crate::platform::clipboard::WinClipboard;
+use crate::platform::clipboard::{Clipboard, WinClipboard};
 use crate::textops::trim::{trim_edges_spaces_tabs, trim_line_preserve_eol};
 use regex::RegexBuilder;
 
@@ -111,7 +111,7 @@ const IDM_VIEW_TABS_VERTICAL_LEFT: u16 = 342;
 const IDM_VIEW_TABS_VERTICAL_RIGHT: u16 = 343;
 const IDM_VIEW_TABS_CYCLE: u16 = 344;
 const IDM_VIEW_WORD_WRAP: u16 = 345;
-const IDM_VIEW_ALWAYS_ON_TOP: u16 = 346;
+const CMD_VIEW_ALWAYS_ON_TOP: u16 = 346;
 const IDM_TAB_CLOSE: u16 = 220;
 const IDM_TAB_CLOSE_OTHERS: u16 = 221;
 const IDM_TAB_CLOSE_RIGHT: u16 = 222;
@@ -121,7 +121,6 @@ const CMD_EDITOR_DELETE: u16 = 331;
 const IDM_HELP_ABOUT: u16 = 400;
 
 const TIMER_SESSION_ID: usize = 1;
-const SESSION_INTERVAL_MS: u32 = 5000;
 const TIMER_FIND_RESULTS: usize = 2;
 const TIMER_WORD_COUNT: usize = 3;
 const WORD_COUNT_INTERVAL_MS: u32 = 250;
@@ -196,10 +195,10 @@ unsafe extern "system" {
 struct DocTab {
     editor: HWND,
     doc: Document,
-    display_name: Option<String>,
-    dirty: bool,
     wrap_enabled: bool,
     word_count: Option<usize>,
+    change_counter: u64,
+    last_backup_change_counter: Option<u64>,
 }
 
 struct FindState {
@@ -209,6 +208,13 @@ struct FindState {
     whole_word: bool,
     regex: bool,
     wrap: bool,
+    last_direction: SearchDirection,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum SearchDirection {
+    Down,
+    Up,
 }
 
 struct FindDialogState {
@@ -285,6 +291,11 @@ struct AppState {
     icon_small: HICON,
     word_count_pending: bool,
     word_count_timer: bool,
+    remember_session: bool,
+    session_snapshot_periodic_backup: bool,
+    backup_interval_seconds: u32,
+    word_wrap_enabled: bool,
+    next_untitled_index: usize,
     find_state: FindState,
     find_dialog: Option<FindDialogState>,
     find_in_files: Option<FindInFilesState>,
@@ -380,6 +391,38 @@ pub fn show_error(title: &str, message: &str) {
             MB_OK | MB_ICONERROR,
         );
     }
+}
+
+fn show_about_dialog(hwnd: HWND) -> Result<()> {
+    let version = option_env!("RIVET_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+    let git_sha = option_env!("RIVET_GIT_SHA").unwrap_or("unknown");
+    let build_utc = option_env!("RIVET_BUILD_UTC").unwrap_or("unknown");
+    let source_url = option_env!("RIVET_SOURCE_URL").unwrap_or("unknown");
+    let data_dir = session::data_dir()?;
+
+    let details = format!(
+        "Rivet {version}\r\n\r\nCommit: {git_sha}\r\nBuilt: {build_utc}\r\nSource: {source_url}\r\nData: {}\r\n\r\nPress Yes to copy details to clipboard.",
+        data_dir.display()
+    );
+    let title = HSTRING::from("About Rivet");
+    let message = HSTRING::from(&details);
+    let result = unsafe {
+        MessageBoxW(
+            hwnd,
+            PCWSTR::from_raw(message.as_ptr()),
+            PCWSTR::from_raw(title.as_ptr()),
+            MB_YESNO | MB_ICONINFORMATION,
+        )
+    };
+
+    if result == IDYES {
+        let mut clipboard = WinClipboard::new(hwnd);
+        clipboard
+            .set_unicode_text(&details)
+            .map_err(|err| AppError::new(format!("Failed to copy about details: {err}")))?;
+    }
+
+    Ok(())
 }
 
 fn create_menu() -> Result<HMENU> {
@@ -531,8 +574,28 @@ fn create_menu() -> Result<HMENU> {
         )?;
         AppendMenuW(menu, MF_POPUP, edit_menu.0 as usize, w!("Edit"))?;
 
+        let view_menu = CreatePopupMenu()?;
+        AppendMenuW(
+            view_menu,
+            MF_STRING,
+            IDM_VIEW_WORD_WRAP as usize,
+            w!("Word Wrap"),
+        )?;
+        AppendMenuW(
+            view_menu,
+            MF_STRING,
+            CMD_VIEW_ALWAYS_ON_TOP as usize,
+            w!("Always On Top"),
+        )?;
+        AppendMenuW(menu, MF_POPUP, view_menu.0 as usize, w!("View"))?;
+
         let help_menu = CreatePopupMenu()?;
-        AppendMenuW(help_menu, MF_STRING, IDM_HELP_ABOUT as usize, w!("About"))?;
+        AppendMenuW(
+            help_menu,
+            MF_STRING,
+            IDM_HELP_ABOUT as usize,
+            w!("About Rivet"),
+        )?;
         AppendMenuW(menu, MF_POPUP, help_menu.0 as usize, w!("Help"))?;
 
         Ok(menu)
@@ -1163,7 +1226,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
-                IDM_VIEW_ALWAYS_ON_TOP => {
+                CMD_VIEW_ALWAYS_ON_TOP => {
                     if let Some(state) = get_state(hwnd) {
                         let enabled = !state.always_on_top;
                         set_always_on_top(hwnd, state, enabled);
@@ -1260,15 +1323,21 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     LRESULT(0)
                 }
                 IDM_FILE_EXIT => {
-                    if let Some(state) = get_state(hwnd)
-                        && confirm_close_all(hwnd, state).unwrap_or(true)
-                    {
-                        let _ = unsafe { DestroyWindow(hwnd) };
+                    if let Some(state) = get_state(hwnd) {
+                        match can_exit(hwnd, state) {
+                            Ok(true) => {
+                                let _ = unsafe { DestroyWindow(hwnd) };
+                            }
+                            Ok(false) => {}
+                            Err(err) => show_error("Rivet error", &err.to_string()),
+                        }
                     }
                     LRESULT(0)
                 }
                 IDM_HELP_ABOUT => {
-                    show_error("Rivet", "Rivet is starting up.");
+                    if let Err(err) = show_about_dialog(hwnd) {
+                        show_error("Rivet error", &err.to_string());
+                    }
                     LRESULT(0)
                 }
                 _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
@@ -1335,14 +1404,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
                 if nmhdr.code == SCN_UPDATEUI {
                     if let Some(state) = get_state(hwnd) {
-                        update_status_position(state);
+                        update_status(state);
                     }
                     return LRESULT(0);
                 }
 
                 if nmhdr.code == SCN_MODIFIED {
                     if let Some(state) = get_state(hwnd) {
+                        if let Some(index) = doc_index_by_hwnd(state, nmhdr.hwndFrom)
+                            && let Some(doc_tab) = state.docs.get_mut(index)
+                        {
+                            doc_tab.change_counter = doc_tab.change_counter.saturating_add(1);
+                            doc_tab.doc.cursor_pos =
+                                scintilla::get_current_pos(doc_tab.editor) as i64;
+                        }
                         schedule_word_count(hwnd, state);
+                        update_status(state);
                     }
                     return LRESULT(0);
                 }
@@ -1353,7 +1430,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if wparam.0 == TIMER_SESSION_ID
                 && let Some(state) = get_state(hwnd)
             {
-                let _ = save_session_checkpoint(state);
+                if let Err(err) = run_snapshot_tick(state, false) {
+                    logging::log_error(&format!("snapshot_tick_failed err={err}"));
+                }
             } else if wparam.0 == TIMER_FIND_RESULTS
                 && let Some(state) = get_state(hwnd)
             {
@@ -1384,16 +1463,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_CLOSE => {
-            if let Some(state) = get_state(hwnd)
-                && confirm_close_all(hwnd, state).unwrap_or(true)
-            {
-                let _ = unsafe { DestroyWindow(hwnd) };
+            if let Some(state) = get_state(hwnd) {
+                match can_exit(hwnd, state) {
+                    Ok(true) => {
+                        let _ = unsafe { DestroyWindow(hwnd) };
+                    }
+                    Ok(false) => {}
+                    Err(err) => show_error("Rivet error", &err.to_string()),
+                }
             }
             LRESULT(0)
         }
         WM_DESTROY => {
             if let Some(state) = get_state(hwnd) {
-                let _ = save_session_checkpoint(state);
+                if let Err(err) = save_session_checkpoint(state) {
+                    logging::log_error(&format!("session_save_on_destroy_failed err={err}"));
+                }
             }
             unsafe {
                 let _ = KillTimer(hwnd, TIMER_SESSION_ID);
@@ -1529,11 +1614,16 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         tab_layout: TabLayout::HorizontalTop,
         tab_list_width: scale_for_dpi(hwnd, 200),
         resizing_tabs: false,
-        always_on_top: false,
+        always_on_top: session::DEFAULT_ALWAYS_ON_TOP,
         icon_big,
         icon_small,
         word_count_pending: false,
         word_count_timer: false,
+        remember_session: session::DEFAULT_REMEMBER_SESSION,
+        session_snapshot_periodic_backup: session::DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP,
+        backup_interval_seconds: session::DEFAULT_BACKUP_INTERVAL_SECONDS,
+        word_wrap_enabled: session::DEFAULT_WORD_WRAP_ENABLED,
+        next_untitled_index: 1,
         find_state: FindState {
             find_text: String::new(),
             replace_text: String::new(),
@@ -1541,6 +1631,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
             whole_word: false,
             regex: false,
             wrap: true,
+            last_direction: SearchDirection::Down,
         },
         find_dialog: None,
         find_in_files: None,
@@ -1564,6 +1655,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     let active = state.active.min(state.docs.len().saturating_sub(1));
     select_tab(hwnd, &mut state, active);
     layout_children(hwnd, &mut state);
+    apply_always_on_top(hwnd, state.always_on_top);
     update_status(&state);
     update_tab_layout_menu(hwnd, state.tab_layout);
     update_wrap_menu(hwnd, &state);
@@ -1571,7 +1663,12 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     update_always_on_top_menu(hwnd, &state);
 
     unsafe {
-        let _ = SetTimer(hwnd, TIMER_SESSION_ID, SESSION_INTERVAL_MS, None);
+        let _ = SetTimer(
+            hwnd,
+            TIMER_SESSION_ID,
+            backup_interval_ms(state.backup_interval_seconds),
+            None,
+        );
     }
 
     Ok(state)
@@ -1719,6 +1816,10 @@ fn open_path_new_tab(
         doc_tab.wrap_enabled = wrap;
         let enable = wrap && !doc_tab.doc.large_file_mode;
         scintilla::set_wrap_enabled(doc_tab.editor, enable);
+    } else {
+        doc_tab.wrap_enabled = state.word_wrap_enabled;
+        let enable = state.word_wrap_enabled && !doc_tab.doc.large_file_mode;
+        scintilla::set_wrap_enabled(doc_tab.editor, enable);
     }
 
     apply_syntax_for_doc(&doc_tab, state.editor_dark);
@@ -1748,7 +1849,7 @@ fn save_all_documents(hwnd: HWND, state: &mut AppState) -> Result<()> {
         let dirty = state
             .docs
             .get(index)
-            .map(|doc_tab| scintilla::is_modified(doc_tab.editor))
+            .map(|doc_tab| doc_tab.doc.is_dirty)
             .unwrap_or(false);
         if dirty {
             match save_document_at(hwnd, state, index, None, false)? {
@@ -1794,8 +1895,12 @@ fn save_document_at(
         .map_err(|err| AppError::new(format!("Failed to write file: {err}")))?;
 
     let stamp = document::FileStamp::from_path(&path)?;
-    doc_tab.doc.path = Some(path);
-    doc_tab.display_name = None;
+    doc_tab.doc.path = Some(path.clone());
+    doc_tab.doc.display_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled")
+        .to_string();
     doc_tab
         .doc
         .update_after_save(encoding, doc_tab.doc.eol, stamp);
@@ -1816,10 +1921,23 @@ fn save_document_at(
     scintilla::set_wrap_enabled(doc_tab.editor, doc_tab.wrap_enabled);
     apply_syntax_for_doc(doc_tab, state.editor_dark);
     scintilla::set_savepoint(doc_tab.editor);
-    doc_tab.dirty = false;
+    doc_tab.doc.is_dirty = false;
+    doc_tab.change_counter = doc_tab.change_counter.saturating_add(1);
+    doc_tab.last_backup_change_counter = None;
+    doc_tab.doc.first_backup_write = None;
+    doc_tab.doc.last_backup_write = None;
+    if let Err(err) = session::delete_backup(&doc_tab.doc.backup_path) {
+        logging::log_error(&format!(
+            "backup_delete_failed path={} err={err}",
+            path.display()
+        ));
+    }
     update_tab_text(state, index);
     update_title(hwnd, state);
     update_status(state);
+    if let Err(err) = save_session_checkpoint(state) {
+        logging::log_error(&format!("session_save_after_manual_save_failed err={err}"));
+    }
     Ok(true)
 }
 
@@ -1880,6 +1998,8 @@ fn update_title(hwnd: HWND, state: &AppState) {
             && let Some(name) = path.file_name().and_then(|name| name.to_str())
         {
             title = format!("Rivet - {name}");
+        } else if !doc_tab.doc.display_name.is_empty() {
+            title = format!("Rivet - {}", doc_tab.doc.display_name);
         }
         if doc_tab.doc.large_file_mode {
             title.push_str(" [Large File Mode]");
@@ -1892,59 +2012,33 @@ fn update_title(hwnd: HWND, state: &AppState) {
 }
 
 fn update_status(state: &AppState) {
-    update_status_text(state);
-    update_status_position(state);
-}
-
-fn update_status_text(state: &AppState) {
-    let mut text = String::from("Ready");
-    if let Some(doc_tab) = state.docs.get(state.active) {
-        if let Some(path) = &doc_tab.doc.path {
-            text = path.display().to_string();
-        }
-        text.push_str(" | ");
-        text.push_str(encoding_label(doc_tab.doc.encoding));
-        text.push_str(" | ");
-        text.push_str(eol_label(doc_tab.doc.eol));
-        if doc_tab.doc.large_file_mode {
-            text.push_str(" | Large File Mode");
-        }
-    }
-
-    let text = HSTRING::from(text);
-    unsafe {
-        SendMessageW(
-            state.status,
-            SB_SETTEXTW,
-            WPARAM(0),
-            LPARAM(text.as_ptr() as isize),
-        );
-    }
-}
-
-fn update_status_position(state: &AppState) {
+    update_status_parts(state);
     let mut line = 1usize;
     let mut col = 1usize;
-    let mut words = String::from("0");
+    let mut sel_len = 0usize;
+    let mut eol = "CRLF".to_string();
+    let mut encoding = "UTF-8".to_string();
+    let mut dirty = String::new();
     if let Some(doc_tab) = state.docs.get(state.active) {
         let pos = scintilla::get_current_pos(doc_tab.editor);
         line = scintilla::line_from_position(doc_tab.editor, pos).saturating_add(1);
         col = scintilla::get_column(doc_tab.editor, pos).saturating_add(1);
-        words = match doc_tab.word_count {
-            Some(count) => count.to_string(),
-            None => "n/a".to_string(),
+        sel_len = scintilla::selection_end(doc_tab.editor)
+            .abs_diff(scintilla::selection_start(doc_tab.editor));
+        eol = eol_mode_label(scintilla::get_eol_mode(doc_tab.editor)).to_string();
+        encoding = codepage_label(scintilla::get_codepage(doc_tab.editor));
+        dirty = if doc_tab.doc.is_dirty {
+            "*".to_string()
+        } else {
+            String::new()
         };
     }
 
-    let text = HSTRING::from(format!("Ln {line}, Col {col} | Words: {words}"));
-    unsafe {
-        SendMessageW(
-            state.status,
-            SB_SETTEXTW,
-            WPARAM(1),
-            LPARAM(text.as_ptr() as isize),
-        );
-    }
+    set_status_part_text(state.status, 0, &format!("Ln {line}, Col {col}"));
+    set_status_part_text(state.status, 1, &format!("Sel {sel_len}"));
+    set_status_part_text(state.status, 2, &format!("EOL: {eol}"));
+    set_status_part_text(state.status, 3, &format!("ENC: {encoding}"));
+    set_status_part_text(state.status, 4, &dirty);
 }
 
 fn update_status_parts(state: &AppState) {
@@ -1953,15 +2047,33 @@ fn update_status_parts(state: &AppState) {
         let _ = GetClientRect(state.status, &mut rect);
     }
     let width = rect.right - rect.left;
-    let right_width = scale_for_dpi(state.status, 240);
-    let right_edge = (width - right_width).max(0);
-    let parts = [right_edge, -1];
+    let sel_width = scale_for_dpi(state.status, 90);
+    let eol_width = scale_for_dpi(state.status, 90);
+    let enc_width = scale_for_dpi(state.status, 110);
+    let dirty_width = scale_for_dpi(state.status, 40);
+    let part0 = (width - sel_width - eol_width - enc_width - dirty_width).max(0);
+    let part1 = (width - eol_width - enc_width - dirty_width).max(part0);
+    let part2 = (width - enc_width - dirty_width).max(part1);
+    let part3 = (width - dirty_width).max(part2);
+    let parts = [part0, part1, part2, part3, -1];
     unsafe {
         SendMessageW(
             state.status,
             SB_SETPARTS,
             WPARAM(parts.len()),
             LPARAM(parts.as_ptr() as isize),
+        );
+    }
+}
+
+fn set_status_part_text(status: HWND, part: usize, text: &str) {
+    let text = HSTRING::from(text);
+    unsafe {
+        SendMessageW(
+            status,
+            SB_SETTEXTW,
+            WPARAM(part),
+            LPARAM(text.as_ptr() as isize),
         );
     }
 }
@@ -1986,7 +2098,7 @@ fn handle_word_count_timer(hwnd: HWND, state: &mut AppState) {
     if state.word_count_pending {
         state.word_count_pending = false;
         update_word_count(state);
-        update_status_position(state);
+        update_status(state);
     }
     if state.word_count_timer && !state.word_count_pending {
         unsafe {
@@ -2197,8 +2309,10 @@ fn perform_find_next(hwnd: HWND, state: &mut AppState) -> Result<()> {
         show_find_dialog(hwnd, state, true)?;
         return Ok(());
     }
+    state.find_state.last_direction = SearchDirection::Down;
     if let Some(editor) = active_editor(state) {
-        find_in_editor(editor, &state.find_state, true);
+        let _ = find_in_editor(editor, &state.find_state, SearchDirection::Down);
+        update_status(state);
     }
     Ok(())
 }
@@ -2209,8 +2323,10 @@ fn perform_find_prev(hwnd: HWND, state: &mut AppState) -> Result<()> {
         show_find_dialog(hwnd, state, true)?;
         return Ok(());
     }
+    state.find_state.last_direction = SearchDirection::Up;
     if let Some(editor) = active_editor(state) {
-        find_in_editor(editor, &state.find_state, false);
+        let _ = find_in_editor(editor, &state.find_state, SearchDirection::Up);
+        update_status(state);
     }
     Ok(())
 }
@@ -2221,8 +2337,10 @@ fn perform_replace(hwnd: HWND, state: &mut AppState) -> Result<()> {
         show_find_dialog(hwnd, state, false)?;
         return Ok(());
     }
+    state.find_state.last_direction = SearchDirection::Down;
     if let Some(editor) = active_editor(state) {
         replace_in_editor(editor, &state.find_state);
+        update_status(state);
     }
     Ok(())
 }
@@ -2235,6 +2353,7 @@ fn perform_replace_all(hwnd: HWND, state: &mut AppState) -> Result<()> {
     }
     if let Some(editor) = active_editor(state) {
         replace_all_in_editor(editor, &state.find_state);
+        update_status(state);
     }
     Ok(())
 }
@@ -2263,27 +2382,147 @@ fn apply_find_state_to_dialog(state: &AppState) -> Result<()> {
     Ok(())
 }
 
-fn find_in_editor(editor: HWND, state: &FindState, forward: bool) {
-    let flags = search_flags(state);
-    if forward {
-        let _ = scintilla::search_next(editor, &state.find_text, flags, state.wrap);
+fn find_in_editor(editor: HWND, state: &FindState, direction: SearchDirection) -> bool {
+    let found = find_match(editor, state, direction);
+    if let Some((start, end)) = found {
+        scintilla::set_selection(editor, start, end);
+        true
     } else {
-        let _ = scintilla::search_prev(editor, &state.find_text, flags, state.wrap);
+        false
     }
 }
 
 fn replace_in_editor(editor: HWND, state: &FindState) {
-    let flags = search_flags(state);
-    if scintilla::search_next(editor, &state.find_text, flags, state.wrap) {
-        scintilla::replace_selection(editor, &state.replace_text);
+    if state.find_text.is_empty() {
+        return;
+    }
+    let selection_start = scintilla::selection_start(editor);
+    let selection_end = scintilla::selection_end(editor);
+    let current_matches = selection_matches_find(editor, state);
+    let (match_start, match_end) = if current_matches {
+        (selection_start, selection_end)
+    } else {
+        match find_match(editor, state, state.last_direction) {
+            Some(range) => range,
+            None => return,
+        }
+    };
+    scintilla::set_target_range(editor, match_start, match_end);
+    scintilla::replace_target(editor, &state.replace_text);
+    let new_end = match_start.saturating_add(state.replace_text.len());
+    scintilla::set_selection(editor, match_start, new_end);
+}
+
+fn selection_matches_find(editor: HWND, state: &FindState) -> bool {
+    let selection_start = scintilla::selection_start(editor);
+    let selection_end = scintilla::selection_end(editor);
+    if selection_start == selection_end {
+        return false;
+    }
+    let selected = match scintilla::selected_text(editor) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    if state.regex {
+        let mut builder = RegexBuilder::new(&state.find_text);
+        builder.case_insensitive(!state.match_case);
+        let regex = match builder.build() {
+            Ok(value) => value,
+            Err(_) => return false,
+        };
+        return regex
+            .find(&selected)
+            .is_some_and(|matched| matched.start() == 0 && matched.end() == selected.len());
+    }
+    if state.match_case {
+        selected == state.find_text
+    } else {
+        selected.to_lowercase() == state.find_text.to_lowercase()
     }
 }
 
 fn replace_all_in_editor(editor: HWND, state: &FindState) {
+    if state.find_text.is_empty() {
+        return;
+    }
     let flags = search_flags(state);
-    scintilla::set_selection(editor, 0, 0);
-    while scintilla::search_next(editor, &state.find_text, flags, false) {
-        scintilla::replace_selection(editor, &state.replace_text);
+    let mut doc_len = scintilla::get_length(editor);
+    let mut search_start = 0usize;
+    let replacement_len = state.replace_text.len();
+    scintilla::begin_undo_action(editor);
+    while let Some((start, end)) =
+        scintilla::search_in_target(editor, &state.find_text, flags, search_start, doc_len)
+    {
+        scintilla::set_target_range(editor, start, end);
+        scintilla::replace_target(editor, &state.replace_text);
+        let removed = end.saturating_sub(start);
+        if replacement_len >= removed {
+            doc_len = doc_len.saturating_add(replacement_len - removed);
+        } else {
+            doc_len = doc_len.saturating_sub(removed - replacement_len);
+        }
+        search_start = start.saturating_add(replacement_len);
+        if search_start > doc_len {
+            break;
+        }
+    }
+    scintilla::end_undo_action(editor);
+}
+
+fn find_match(
+    editor: HWND,
+    state: &FindState,
+    direction: SearchDirection,
+) -> Option<(usize, usize)> {
+    if state.find_text.is_empty() {
+        return None;
+    }
+    let flags = search_flags(state);
+    let doc_len = scintilla::get_length(editor);
+    let caret = scintilla::get_current_pos(editor);
+    let sel_start = scintilla::selection_start(editor);
+    let sel_end = scintilla::selection_end(editor);
+
+    match direction {
+        SearchDirection::Down => {
+            let primary_start = if sel_start != sel_end { sel_end } else { caret };
+            scintilla::search_in_target(editor, &state.find_text, flags, primary_start, doc_len)
+                .or_else(|| {
+                    if state.wrap {
+                        scintilla::search_in_target(
+                            editor,
+                            &state.find_text,
+                            flags,
+                            0,
+                            primary_start.min(doc_len),
+                        )
+                    } else {
+                        None
+                    }
+                })
+        }
+        SearchDirection::Up => {
+            let primary_start = if sel_start != sel_end {
+                sel_start
+            } else {
+                caret
+            };
+            scintilla::search_in_target(editor, &state.find_text, flags, primary_start, 0).or_else(
+                || {
+                    if state.wrap {
+                        scintilla::search_in_target(
+                            editor,
+                            &state.find_text,
+                            flags,
+                            doc_len,
+                            primary_start,
+                        )
+                    } else {
+                        None
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -2737,13 +2976,15 @@ fn lexer_for_doc(doc: &Document) -> scintilla::LexerKind {
 
 fn create_doc_from_path(parent: HWND, instance: HINSTANCE, path: PathBuf) -> Result<DocTab> {
     let editor = create_editor(parent, instance)?;
+    let mut doc = Document::new_empty();
+    doc.backup_path = session::backup_path_for_id(doc.id)?;
     let mut doc_tab = DocTab {
         editor,
-        doc: Document::new_empty(),
-        display_name: None,
-        dirty: false,
+        doc,
         wrap_enabled: true,
         word_count: Some(0),
+        change_counter: 0,
+        last_backup_change_counter: None,
     };
     load_file_into_doc(&mut doc_tab, &path)?;
     Ok(doc_tab)
@@ -2767,8 +3008,16 @@ fn load_file_into_doc(doc_tab: &mut DocTab, path: &PathBuf) -> Result<()> {
     doc_tab
         .doc
         .update_from_load(path.clone(), encoding, eol, stamp, large_file_mode);
-    doc_tab.display_name = None;
-    doc_tab.dirty = false;
+    doc_tab.doc.display_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled")
+        .to_string();
+    doc_tab.doc.is_dirty = false;
+    doc_tab.doc.first_backup_write = None;
+    doc_tab.doc.last_backup_write = None;
+    doc_tab.change_counter = 0;
+    doc_tab.last_backup_change_counter = None;
     doc_tab.word_count = if large_file_mode {
         None
     } else {
@@ -2779,16 +3028,19 @@ fn load_file_into_doc(doc_tab: &mut DocTab, path: &PathBuf) -> Result<()> {
 
 fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Result<()> {
     let editor = create_editor(hwnd, instance)?;
+    let mut doc = Document::new_empty();
+    doc.display_name = next_untitled_name(state);
+    doc.backup_path = session::backup_path_for_id(doc.id)?;
     let doc_tab = DocTab {
         editor,
-        doc: Document::new_empty(),
-        display_name: None,
-        dirty: false,
-        wrap_enabled: true,
+        doc,
+        wrap_enabled: state.word_wrap_enabled,
         word_count: Some(0),
+        change_counter: 0,
+        last_backup_change_counter: None,
     };
     scintilla::set_eol_mode(editor, doc_tab.doc.eol);
-    scintilla::set_wrap_enabled(editor, true);
+    scintilla::set_wrap_enabled(editor, state.word_wrap_enabled);
     scintilla::set_savepoint(editor);
     apply_syntax_for_doc(&doc_tab, state.editor_dark);
 
@@ -2813,19 +3065,21 @@ fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
     doc.encoding = source.doc.encoding;
     doc.eol = source.doc.eol;
     doc.large_file_mode = document::is_large_file(text.len() as u64);
+    doc.display_name = format!("Copy of {}", tab_base_name(source));
+    doc.backup_path = session::backup_path_for_id(doc.id)?;
+    doc.is_dirty = true;
 
-    let copy_name = format!("Copy of {}", tab_base_name(source));
     let doc_tab = DocTab {
         editor,
         doc,
-        display_name: Some(copy_name),
-        dirty: true,
-        wrap_enabled: source.wrap_enabled && !source.doc.large_file_mode,
+        wrap_enabled: state.word_wrap_enabled && !source.doc.large_file_mode,
         word_count: if source.doc.large_file_mode {
             None
         } else {
             Some(count_words(&text))
         },
+        change_counter: 1,
+        last_backup_change_counter: None,
     };
     let lexer = lexer_for_doc(&source.doc);
     scintilla::apply_lexer(doc_tab.editor, lexer, state.editor_dark);
@@ -2836,8 +3090,8 @@ fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
 }
 
 fn tab_base_name(doc_tab: &DocTab) -> String {
-    if let Some(display_name) = &doc_tab.display_name {
-        display_name.clone()
+    if !doc_tab.doc.display_name.is_empty() {
+        doc_tab.doc.display_name.clone()
     } else if let Some(path) = &doc_tab.doc.path {
         path.file_name()
             .and_then(|name| name.to_str())
@@ -2850,7 +3104,7 @@ fn tab_base_name(doc_tab: &DocTab) -> String {
 
 fn tab_title(doc_tab: &DocTab) -> String {
     let mut title = tab_base_name(doc_tab);
-    if doc_tab.dirty {
+    if doc_tab.doc.is_dirty {
         title = format!("• {title}");
     }
     title
@@ -2939,13 +3193,8 @@ fn select_tab(hwnd: HWND, state: &mut AppState, index: usize) {
     }
 
     state.active = index;
-    let dirty = state
-        .docs
-        .get(index)
-        .map(|doc_tab| scintilla::is_modified(doc_tab.editor))
-        .unwrap_or(false);
     if let Some(doc_tab) = state.docs.get_mut(index) {
-        doc_tab.dirty = dirty;
+        doc_tab.doc.cursor_pos = scintilla::get_current_pos(doc_tab.editor) as i64;
     }
     update_tab_text(state, index);
     unsafe {
@@ -3019,17 +3268,20 @@ fn doc_index_by_hwnd(state: &AppState, hwnd: HWND) -> Option<usize> {
 
 fn set_dirty(state: &mut AppState, index: usize, dirty: bool) {
     if let Some(doc_tab) = state.docs.get_mut(index)
-        && doc_tab.dirty != dirty
+        && doc_tab.doc.is_dirty != dirty
     {
-        doc_tab.dirty = dirty;
+        doc_tab.doc.is_dirty = dirty;
         update_tab_text(state, index);
+        if index == state.active {
+            update_status(state);
+        }
     }
 }
 
 fn confirm_close_all(hwnd: HWND, state: &mut AppState) -> Result<bool> {
     for index in 0..state.docs.len() {
         let doc_tab = &state.docs[index];
-        if doc_tab.dirty {
+        if !state.session_snapshot_periodic_backup && doc_tab.doc.is_dirty {
             match prompt_save_changes(hwnd, doc_tab) {
                 SaveChoice::Yes => match save_document_at(hwnd, state, index, None, false)? {
                     true => {}
@@ -3047,9 +3299,19 @@ fn close_tab(hwnd: HWND, state: &mut AppState, index: usize) -> Result<bool> {
     if index >= state.docs.len() {
         return Ok(true);
     }
+
+    if state.session_snapshot_periodic_backup
+        && state
+            .docs
+            .get(index)
+            .is_some_and(|doc_tab| doc_tab.doc.is_dirty)
+    {
+        backup_doc_at_index(state, index, true)?;
+    }
+
     let should_close = {
         let doc_tab = &state.docs[index];
-        if doc_tab.dirty {
+        if !state.session_snapshot_periodic_backup && doc_tab.doc.is_dirty {
             match prompt_save_changes(hwnd, doc_tab) {
                 SaveChoice::Yes => match save_document_at(hwnd, state, index, None, false) {
                     Ok(true) => true,
@@ -3072,6 +3334,12 @@ fn close_tab(hwnd: HWND, state: &mut AppState, index: usize) -> Result<bool> {
     }
 
     let doc = state.docs.remove(index);
+    if let Err(err) = session::delete_backup(&doc.doc.backup_path) {
+        logging::log_error(&format!(
+            "backup_delete_failed_on_close path={} err={err}",
+            doc.doc.backup_path.display()
+        ));
+    }
     unsafe {
         let _ = DestroyWindow(doc.editor);
         SendMessageW(state.tabs, TCM_DELETEITEM, WPARAM(index), LPARAM(0));
@@ -3088,6 +3356,9 @@ fn close_tab(hwnd: HWND, state: &mut AppState, index: usize) -> Result<bool> {
 
     let new_index = state.active.min(state.docs.len().saturating_sub(1));
     select_tab(hwnd, state, new_index);
+    if let Err(err) = save_session_checkpoint(state) {
+        logging::log_error(&format!("session_save_after_tab_close_failed err={err}"));
+    }
     Ok(true)
 }
 
@@ -3144,7 +3415,7 @@ fn prompt_save_changes(hwnd: HWND, doc_tab: &DocTab) -> SaveChoice {
         .path
         .as_ref()
         .and_then(|path| path.file_name().and_then(|name| name.to_str()))
-        .unwrap_or("Untitled");
+        .unwrap_or(doc_tab.doc.display_name.as_str());
     let message = HSTRING::from(format!("Save changes to {name}?"));
     let title = HSTRING::from("Unsaved changes");
     let result = unsafe {
@@ -3163,75 +3434,304 @@ fn prompt_save_changes(hwnd: HWND, doc_tab: &DocTab) -> SaveChoice {
 }
 
 fn restore_session(hwnd: HWND, mut state: AppState) -> Result<AppState> {
-    let session = match session::load_session() {
-        Ok(session) => session,
+    let snapshot = match session::load_session() {
+        Ok(snapshot) => snapshot,
         Err(_) => return Ok(state),
     };
 
-    for entry in session.entries {
-        if open_path_new_tab(
-            hwnd,
-            &mut state,
-            entry.path,
-            Some(entry.caret),
-            Some(entry.wrap),
-            Some(entry.encoding),
-            Some(entry.eol),
-        )
-        .is_err()
-        {
-            continue;
+    state.remember_session = snapshot.remember_session;
+    state.session_snapshot_periodic_backup = snapshot.session_snapshot_periodic_backup;
+    state.backup_interval_seconds = snapshot.backup_interval_seconds.max(1);
+    state.word_wrap_enabled = snapshot.word_wrap_enabled;
+    state.always_on_top = snapshot.always_on_top;
+
+    if !state.remember_session {
+        return Ok(state);
+    }
+
+    for entry in snapshot.entries {
+        if let Err(err) = restore_session_entry(hwnd, &mut state, entry) {
+            logging::log_error(&format!("session_restore_entry_failed err={err}"));
         }
     }
 
     if !state.docs.is_empty() {
-        state.active = session.active.min(state.docs.len().saturating_sub(1));
+        if let Some(active_id) = snapshot.active_tab_id
+            && let Some(index) = state.docs.iter().position(|doc| doc.doc.id == active_id)
+        {
+            state.active = index;
+        } else {
+            state.active = 0;
+        }
     }
 
     Ok(state)
 }
 
-fn save_session_checkpoint(state: &AppState) -> Result<()> {
-    let mut entries = Vec::new();
-    let mut active_entry = 0usize;
-    let mut entry_index = 0usize;
-    for (doc_index, doc_tab) in state.docs.iter().enumerate() {
-        if let Some(path) = &doc_tab.doc.path {
-            let caret = scintilla::get_current_pos(doc_tab.editor);
-            entries.push(session::SessionEntry {
-                path: path.clone(),
-                caret,
-                encoding: doc_tab.doc.encoding,
-                eol: doc_tab.doc.eol,
-                wrap: doc_tab.wrap_enabled,
-            });
-            if doc_index == state.active {
-                active_entry = entry_index;
-            }
-            entry_index += 1;
-        }
+fn restore_session_entry(
+    hwnd: HWND,
+    state: &mut AppState,
+    entry: session::SessionEntry,
+) -> Result<()> {
+    let backup_modified = session::modified_time(&entry.backup_path).ok();
+    let disk_modified = entry
+        .path
+        .as_ref()
+        .and_then(|path| session::modified_time(path).ok());
+    let prefer_backup_for_dirty =
+        state.remember_session && state.session_snapshot_periodic_backup && entry.is_dirty;
+    let restore_source = session::decide_restore_source(&session::RestoreDecisionInput {
+        path: entry.path.clone(),
+        backup_path: entry.backup_path.clone(),
+        is_dirty: prefer_backup_for_dirty,
+        backup_modified,
+        disk_modified,
+    });
+    if restore_source == session::RestoreSource::Skip {
+        return Ok(());
     }
 
-    let data = session::SessionData {
-        active: active_entry,
-        entries,
+    let (text, encoding, stamp, large_file_mode) = match restore_source {
+        session::RestoreSource::Disk => {
+            let path = entry
+                .path
+                .as_ref()
+                .ok_or_else(|| AppError::new("Missing disk path for restore."))?;
+            let bytes = std::fs::read(path)
+                .map_err(|err| AppError::new(format!("Failed to read restore path: {err}")))?;
+            let (text, encoding) = document::decode_bytes(&bytes)?;
+            let stamp = document::FileStamp::from_path(path)?;
+            let large = document::is_large_file(stamp.size);
+            (text, encoding, Some(stamp), large)
+        }
+        session::RestoreSource::Backup => {
+            let bytes = std::fs::read(&entry.backup_path)
+                .map_err(|err| AppError::new(format!("Failed to read backup file: {err}")))?;
+            let text = String::from_utf8(bytes.clone()).or_else(|_| {
+                document::decode_bytes(&bytes)
+                    .map(|(decoded, _)| decoded)
+                    .map_err(|err| AppError::new(format!("Failed to decode backup file: {err}")))
+            })?;
+            let stamp = entry
+                .path
+                .as_ref()
+                .and_then(|path| document::FileStamp::from_path(path).ok());
+            let large = stamp
+                .as_ref()
+                .map(|value| document::is_large_file(value.size))
+                .unwrap_or_else(|| document::is_large_file(text.len() as u64));
+            (text, TextEncoding::Utf8, stamp, large)
+        }
+        session::RestoreSource::Skip => return Ok(()),
     };
+
+    let instance = module_instance()?;
+    let editor = create_editor(hwnd, instance)?;
+    scintilla::set_text(editor, &text)?;
+
+    let mut doc = Document::with_id(entry.id);
+    doc.path = entry.path.clone();
+    doc.display_name = if entry.display_name.is_empty() {
+        doc.path
+            .as_ref()
+            .and_then(|path| path.file_name().and_then(|name| name.to_str()))
+            .unwrap_or("Untitled")
+            .to_string()
+    } else {
+        entry.display_name
+    };
+    doc.backup_path = entry.backup_path;
+    doc.is_dirty = entry.is_dirty;
+    doc.encoding = encoding;
+    doc.encoding_hint = Some(encoding);
+    doc.eol = document::detect_eol(&text);
+    doc.stamp = stamp;
+    doc.large_file_mode = large_file_mode;
+    doc.cursor_pos = entry.cursor_pos;
+    doc.scroll_pos = 0;
+    doc.first_backup_write = None;
+    doc.last_backup_write = entry.backup_timestamp.map(unix_millis_to_system_time);
+    ensure_doc_backup_path(&mut doc)?;
+
+    let wrap_enabled = state.word_wrap_enabled;
+    scintilla::set_eol_mode(editor, doc.eol);
+    scintilla::set_wrap_enabled(editor, wrap_enabled && !doc.large_file_mode);
+    scintilla::set_savepoint(editor);
+
+    let doc_tab = DocTab {
+        editor,
+        doc,
+        wrap_enabled,
+        word_count: if large_file_mode {
+            None
+        } else {
+            Some(count_words(&text))
+        },
+        change_counter: 0,
+        last_backup_change_counter: if restore_source == session::RestoreSource::Backup {
+            Some(0)
+        } else {
+            None
+        },
+    };
+    if doc_tab.doc.path.is_none() {
+        update_next_untitled_index_from_name(state, &doc_tab.doc.display_name);
+    }
+    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
+    if entry.cursor_pos >= 0 {
+        scintilla::goto_pos(state.docs[index].editor, entry.cursor_pos as usize);
+    }
+    Ok(())
+}
+
+fn save_session_checkpoint(state: &AppState) -> Result<()> {
+    if !state.remember_session {
+        let mut data = session::SessionData::empty();
+        data.remember_session = false;
+        data.session_snapshot_periodic_backup = false;
+        data.backup_interval_seconds = state.backup_interval_seconds.max(1);
+        data.word_wrap_enabled = state.word_wrap_enabled;
+        data.always_on_top = state.always_on_top;
+        data.active_tab_id = None;
+        data.entries.clear();
+        return session::save_session(&data);
+    }
+
+    let mut entries = Vec::new();
+    for doc_tab in &state.docs {
+        let backup_path = if doc_tab.doc.backup_path.as_os_str().is_empty() {
+            session::backup_path_for_id(doc_tab.doc.id)?
+        } else {
+            doc_tab.doc.backup_path.clone()
+        };
+        entries.push(session::SessionEntry {
+            id: doc_tab.doc.id,
+            path: doc_tab.doc.path.clone(),
+            display_name: tab_base_name(doc_tab),
+            backup_path,
+            is_dirty: doc_tab.doc.is_dirty,
+            cursor_pos: scintilla::get_current_pos(doc_tab.editor) as i64,
+            backup_timestamp: doc_tab.doc.last_backup_write.map(session::unix_timestamp),
+            disk_timestamp_at_backup: doc_tab
+                .doc
+                .stamp
+                .as_ref()
+                .map(|stamp| session::unix_timestamp(stamp.modified)),
+        });
+    }
+
+    let mut data = session::SessionData::empty();
+    data.remember_session = state.remember_session;
+    data.session_snapshot_periodic_backup = state.session_snapshot_periodic_backup;
+    data.backup_interval_seconds = state.backup_interval_seconds.max(1);
+    data.word_wrap_enabled = state.word_wrap_enabled;
+    data.always_on_top = state.always_on_top;
+    data.active_tab_id = state.docs.get(state.active).map(|doc| doc.doc.id);
+    data.entries = entries;
     session::save_session(&data)
 }
 
-fn encoding_label(encoding: TextEncoding) -> &'static str {
-    match encoding {
-        TextEncoding::Utf8 => "UTF-8",
-        TextEncoding::Utf8Bom => "UTF-8 BOM",
-        TextEncoding::Utf16Le => "UTF-16 LE",
-        TextEncoding::Utf16Be => "UTF-16 BE",
+fn run_snapshot_tick(state: &mut AppState, final_pass: bool) -> Result<()> {
+    if state.session_snapshot_periodic_backup {
+        backup_dirty_documents(state, final_pass)?;
+    }
+    if state.remember_session {
+        save_session_checkpoint(state)
+    } else {
+        Ok(())
     }
 }
 
-fn eol_label(eol: Eol) -> &'static str {
-    match eol {
-        Eol::Crlf => "CRLF",
-        Eol::Lf => "LF",
+fn backup_dirty_documents(state: &mut AppState, force: bool) -> Result<()> {
+    for index in 0..state.docs.len() {
+        if !state.docs[index].doc.is_dirty {
+            continue;
+        }
+        backup_doc_at_index(state, index, force)?;
+    }
+    Ok(())
+}
+
+fn backup_doc_at_index(state: &mut AppState, index: usize, force: bool) -> Result<()> {
+    let doc_tab = state
+        .docs
+        .get_mut(index)
+        .ok_or_else(|| AppError::new("Invalid document index for backup."))?;
+    ensure_doc_backup_path(&mut doc_tab.doc)?;
+    if !force
+        && let Some(last) = doc_tab.last_backup_change_counter
+        && last == doc_tab.change_counter
+    {
+        return Ok(());
+    }
+
+    doc_tab.doc.cursor_pos = scintilla::get_current_pos(doc_tab.editor) as i64;
+    let text = scintilla::get_text(doc_tab.editor)?;
+    let timestamp = session::write_backup(&doc_tab.doc.backup_path, text.as_bytes())?;
+    if doc_tab.doc.first_backup_write.is_none() {
+        doc_tab.doc.first_backup_write = Some(timestamp);
+    }
+    doc_tab.doc.last_backup_write = Some(timestamp);
+    doc_tab.last_backup_change_counter = Some(doc_tab.change_counter);
+    Ok(())
+}
+
+fn can_exit(hwnd: HWND, state: &mut AppState) -> Result<bool> {
+    if state.session_snapshot_periodic_backup {
+        run_snapshot_tick(state, true)?;
+        return Ok(true);
+    }
+    confirm_close_all(hwnd, state)
+}
+
+fn backup_interval_ms(interval_secs: u32) -> u32 {
+    interval_secs.max(1).saturating_mul(1000)
+}
+
+fn next_untitled_name(state: &mut AppState) -> String {
+    let value = state.next_untitled_index;
+    state.next_untitled_index = state.next_untitled_index.saturating_add(1);
+    format!("new {value:03}")
+}
+
+fn update_next_untitled_index_from_name(state: &mut AppState, name: &str) {
+    if let Some(value) = name.strip_prefix("new ")
+        && let Ok(parsed) = value.trim().parse::<usize>()
+    {
+        let candidate = parsed.saturating_add(1);
+        if candidate > state.next_untitled_index {
+            state.next_untitled_index = candidate;
+        }
+    }
+}
+
+fn ensure_doc_backup_path(doc: &mut Document) -> Result<()> {
+    if doc.backup_path.as_os_str().is_empty() {
+        doc.backup_path = session::backup_path_for_id(doc.id)?;
+    }
+    Ok(())
+}
+
+fn unix_millis_to_system_time(value: u64) -> SystemTime {
+    UNIX_EPOCH + Duration::from_millis(value)
+}
+
+fn codepage_label(codepage: i32) -> String {
+    match codepage {
+        65001 => "UTF-8".to_string(),
+        1200 => "UTF-16 LE".to_string(),
+        1201 => "UTF-16 BE".to_string(),
+        value => format!("CP-{value}"),
+    }
+}
+
+fn eol_mode_label(mode: i32) -> &'static str {
+    match mode {
+        0 => "CRLF",
+        1 => "CR",
+        2 => "LF",
+        _ => "?",
     }
 }
 
@@ -3400,7 +3900,7 @@ fn show_tab_context_menu(
     y: i32,
 ) -> Option<u16> {
     let doc = state.docs.get(index)?;
-    let is_dirty = scintilla::is_modified(doc.editor);
+    let is_dirty = doc.doc.is_dirty;
     let has_path = doc.doc.path.is_some();
     let only_one = state.docs.len() <= 1;
     let is_first = index == 0;
@@ -3639,26 +4139,35 @@ fn set_tab_layout(hwnd: HWND, state: &mut AppState, layout: TabLayout) {
 }
 
 fn toggle_word_wrap(hwnd: HWND, state: &mut AppState) {
-    let enabled = state
-        .docs
-        .get(state.active)
-        .map(|doc_tab| !doc_tab.wrap_enabled)
-        .unwrap_or(true);
+    let enabled = !state.word_wrap_enabled;
     set_word_wrap(hwnd, state, enabled);
 }
 
 fn set_word_wrap(hwnd: HWND, state: &mut AppState, enabled: bool) {
-    if let Some(doc_tab) = state.docs.get_mut(state.active) {
+    state.word_wrap_enabled = enabled;
+    for doc_tab in &mut state.docs {
         doc_tab.wrap_enabled = enabled;
         let apply = enabled && !doc_tab.doc.large_file_mode;
         scintilla::set_wrap_enabled(doc_tab.editor, apply);
     }
     update_wrap_menu(hwnd, state);
+    if let Err(err) = save_session_checkpoint(state) {
+        logging::log_error(&format!("session_save_after_wrap_toggle_failed err={err}"));
+    }
 }
 
 fn set_always_on_top(hwnd: HWND, state: &mut AppState, enabled: bool) {
     state.always_on_top = enabled;
     update_always_on_top_menu(hwnd, state);
+    apply_always_on_top(hwnd, enabled);
+    if let Err(err) = save_session_checkpoint(state) {
+        logging::log_error(&format!(
+            "session_save_after_always_on_top_toggle_failed err={err}"
+        ));
+    }
+}
+
+fn apply_always_on_top(hwnd: HWND, enabled: bool) {
     let insert_after = if enabled {
         HWND_TOPMOST
     } else {
@@ -3735,12 +4244,7 @@ fn update_wrap_menu(hwnd: HWND, state: &AppState) {
     if menu.0 == 0 {
         return;
     }
-    let checked = state
-        .docs
-        .get(state.active)
-        .map(|doc_tab| doc_tab.wrap_enabled)
-        .unwrap_or(true);
-    set_menu_check(menu, IDM_VIEW_WORD_WRAP, checked);
+    set_menu_check(menu, IDM_VIEW_WORD_WRAP, state.word_wrap_enabled);
 }
 
 fn update_copy_path_menu(hwnd: HWND, state: &AppState) {
@@ -3780,7 +4284,7 @@ fn update_always_on_top_menu(hwnd: HWND, state: &AppState) {
     if menu.0 == 0 {
         return;
     }
-    set_menu_check(menu, IDM_VIEW_ALWAYS_ON_TOP, state.always_on_top);
+    set_menu_check(menu, CMD_VIEW_ALWAYS_ON_TOP, state.always_on_top);
 }
 
 fn set_menu_check(menu: HMENU, id: u16, checked: bool) {

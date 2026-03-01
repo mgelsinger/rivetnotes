@@ -1,6 +1,6 @@
 [package]
 name = "rivet"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 
@@ -8,6 +8,7 @@ license = "MIT"
 windows = { version = "0.54.0", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_Storage_FileSystem",
   "Win32_System_Com",
   "Win32_System_DataExchange",
   "Win32_System_LibraryLoader",
@@ -22,10 +23,14 @@ windows = { version = "0.54.0", features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 regex = "1.10.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.8", features = ["v4", "serde"] }
 
 [build-dependencies]
 cc = "1.0"
 winres = "0.1"
+time = { version = "0.3", features = ["formatting"] }
 
 [dev-dependencies]
 tempfile = "3"

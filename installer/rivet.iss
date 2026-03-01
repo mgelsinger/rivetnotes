@@ -37,8 +37,10 @@ Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Ad
 [Files]
 Source: "{#MyAppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\\NOTICE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\\THIRD_PARTY_NOTICES\\*"; DestDir: "{app}\\THIRD_PARTY_NOTICES"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\Rivet"; Filename: "{app}\rivet.exe"

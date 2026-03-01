@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use uuid::Uuid;
+
 use crate::error::{AppError, Result};
 
 pub const LARGE_FILE_THRESHOLD: u64 = 100 * 1024 * 1024;
@@ -41,7 +43,16 @@ impl FileStamp {
 
 #[derive(Debug)]
 pub struct Document {
+    pub id: Uuid,
     pub path: Option<PathBuf>,
+    pub display_name: String,
+    pub is_dirty: bool,
+    pub backup_path: PathBuf,
+    pub first_backup_write: Option<SystemTime>,
+    pub last_backup_write: Option<SystemTime>,
+    pub cursor_pos: i64,
+    pub scroll_pos: i64,
+    pub encoding_hint: Option<TextEncoding>,
     pub encoding: TextEncoding,
     pub eol: Eol,
     pub stamp: Option<FileStamp>,
@@ -50,8 +61,21 @@ pub struct Document {
 
 impl Document {
     pub fn new_empty() -> Self {
+        Self::with_id(Uuid::new_v4())
+    }
+
+    pub fn with_id(id: Uuid) -> Self {
         Self {
+            id,
             path: None,
+            display_name: "new 001".to_string(),
+            is_dirty: false,
+            backup_path: PathBuf::new(),
+            first_backup_write: None,
+            last_backup_write: None,
+            cursor_pos: 0,
+            scroll_pos: 0,
+            encoding_hint: None,
             encoding: TextEncoding::Utf8,
             eol: Eol::Crlf,
             stamp: None,
@@ -69,15 +93,19 @@ impl Document {
     ) {
         self.path = Some(path);
         self.encoding = encoding;
+        self.encoding_hint = Some(encoding);
         self.eol = eol;
         self.stamp = Some(stamp);
         self.large_file_mode = large_file_mode;
+        self.is_dirty = false;
     }
 
     pub fn update_after_save(&mut self, encoding: TextEncoding, eol: Eol, stamp: FileStamp) {
         self.encoding = encoding;
+        self.encoding_hint = Some(encoding);
         self.eol = eol;
         self.stamp = Some(stamp);
+        self.is_dirty = false;
     }
 }
 

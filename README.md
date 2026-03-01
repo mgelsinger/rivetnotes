@@ -8,13 +8,14 @@ way, Rivet is the point.
 ## Features
 
 - Tabbed editing with horizontal or vertical tab layout
-- Session restore (reopens files and caret position)
+- Session snapshot + periodic backup (Notepad++-style restore of unsaved work)
 - Find/replace plus Find in Files with cancellation
 - Syntax highlighting for common formats
-- Word wrap toggle (on by default)
-- Status bar with encoding, line endings, line/column, and word count
-- Always-on-top toggle for quick note-taking
-- Minimal menu bar (`File`, `Edit`, `Help`) and tiny editor context menu
+- Word wrap toggle (on by default) and `Always On Top` toggle in `View`
+- Status bar truth fields: `Ln/Col`, `Sel`, `EOL`, `ENC`, dirty indicator
+- Crash-safe atomic writes for session/backup files with stale temp cleanup on startup
+- About dialog with build metadata (version, commit SHA, build UTC, source, data dir)
+- Minimal menu bar (`File`, `Edit`, `View`, `Help`) and tiny editor context menu
 - Text transforms: `Uppercase`, `Lowercase`, `Trim Leading + Trailing Whitespace`
 - Shortcut support for transforms (`Ctrl+U`, `Ctrl+Shift+U`) and tab close (`Ctrl+W`)
 - Clipboard path helpers in `Edit -> Copy to Clipboard`:
@@ -55,7 +56,10 @@ cargo run
 ## Contributing
 
 See `CONTRIBUTING.md`. At minimum, CI must be green before merging.
+CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`,
+and a scheduled RustSec dependency audit.
 
 ## License
 
 MIT. See `LICENSE`.
+Third-party notices are in `NOTICE.txt` and `THIRD_PARTY_NOTICES/`.

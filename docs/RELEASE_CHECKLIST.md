@@ -19,10 +19,13 @@
 ## Security
 
 - Review dependency updates and licenses.
+- Run dependency audit (`cargo audit`) and review RustSec output.
+- Generate dependency attribution report for Rust crates and include it in release artifacts.
 - Capture build provenance: toolchain version, git revision, build date.
 - If signing is available, sign binaries and update checksums after signing.
 
 ## Release
 
 - Attach portable zip and checksums to the release.
+- Verify `NOTICE.txt` and `THIRD_PARTY_NOTICES/` are present in both portable zip and installer.
 - Publish release notes based on `CHANGELOG.md`.
