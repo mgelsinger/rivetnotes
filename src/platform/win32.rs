@@ -1475,10 +1475,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_DESTROY => {
-            if let Some(state) = get_state(hwnd) {
-                if let Err(err) = save_session_checkpoint(state) {
-                    logging::log_error(&format!("session_save_on_destroy_failed err={err}"));
-                }
+            if let Some(state) = get_state(hwnd)
+                && let Err(err) = save_session_checkpoint(state)
+            {
+                logging::log_error(&format!("session_save_on_destroy_failed err={err}"));
             }
             unsafe {
                 let _ = KillTimer(hwnd, TIMER_SESSION_ID);
