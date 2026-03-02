@@ -7,6 +7,17 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 - TBD.
 
+## [0.3.1] - 2026-03-02
+
+- Added `Edit -> Go To Line...` with `Ctrl+G` and Scintilla `SCI_GOTOLINE` navigation,
+  including 1-based line input prefilled from the current caret line and clamped to file bounds.
+- Completed core Find/Replace behavior with standard keyflow:
+  `Ctrl+F`, `Ctrl+H`, `F3`, `Shift+F3`, wrap-around, match case, whole word,
+  and `Replace` now advancing to the next match after replacement.
+- Kept `Replace All` as a single undo step via grouped Scintilla undo actions.
+- Fixed CI clippy gating issue (`collapsible_if`) so `cargo clippy -- -D warnings`
+  passes in GitHub Actions.
+
 ## [0.3.0] - 2026-03-01
 
 - Implemented Notepad++-style `remember_session` + `session_snapshot_periodic_backup`
