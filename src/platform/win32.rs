@@ -6,8 +6,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use windows::Win32::Foundation::{
-    COLORREF, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT, POINT,
-    WPARAM,
+    BOOL, COLORREF, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT,
+    POINT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
     CreateSolidBrush, DeleteObject, HBRUSH, HDC, InvalidateRect, ScreenToClient, SetBkColor,
@@ -34,27 +34,28 @@ use windows::Win32::UI::Shell::{
     DragQueryFileW, HDROP, SHBrowseForFolderW, SHGetPathFromIDListW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ACCEL, AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON, CS_HREDRAW,
-    CS_VREDRAW, CW_USEDEFAULT, CheckMenuItem, CreateAcceleratorTableW, CreateMenu, CreatePopupMenu,
-    CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable, DestroyMenu, DestroyWindow,
-    DispatchMessageW, ES_AUTOHSCROLL, EnableMenuItem, FALT, FCONTROL, FSHIFT, FVIRTKEY, GCLP_HICON,
-    GCLP_HICONSM, GWLP_USERDATA, GetClientRect, GetCursorPos, GetMenu, GetMessageW, GetParent,
-    GetSystemMetrics, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON,
-    HMENU, HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL, ICON_SMALL2, IDC_ARROW, IDC_SIZEWE,
-    IDI_APPLICATION, IDNO, IDYES, IMAGE_ICON, KillTimer, LB_ADDSTRING, LB_GETCURSEL,
-    LB_RESETCONTENT, LB_SETCURSEL, LBN_DBLCLK, LBN_SELCHANGE, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY,
-    LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW, LoadImageW, MB_ICONERROR,
-    MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL, MF_BYCOMMAND, MF_CHECKED,
-    MF_ENABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MessageBoxW,
-    PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE,
-    SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SYSTEM_METRICS_INDEX, SendMessageW,
-    SetClassLongPtrW, SetCursor, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
-    ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WM_ACTIVATEAPP, WM_CLOSE, WM_COMMAND,
-    WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLORLISTBOX, WM_DESTROY, WM_DROPFILES, WM_GETICON,
-    WM_INITMENUPOPUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY,
-    WM_NOTIFY, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CHILD,
-    WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    ACCEL, AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_PUSHBUTTON,
+    CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CheckMenuItem, CreateAcceleratorTableW, CreateMenu,
+    CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable, DestroyMenu,
+    DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL, ES_NUMBER, EnableMenuItem, FALT, FCONTROL,
+    FSHIFT, FVIRTKEY, GCLP_HICON, GCLP_HICONSM, GWLP_USERDATA, GetClientRect, GetCursorPos,
+    GetMenu, GetMessageW, GetParent, GetSystemMetrics, GetWindowLongPtrW, GetWindowTextLengthW,
+    GetWindowTextW, HACCEL, HICON, HMENU, HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL,
+    ICON_SMALL2, IDC_ARROW, IDC_SIZEWE, IDI_APPLICATION, IDNO, IDYES, IMAGE_ICON, KillTimer,
+    LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, LBN_DBLCLK, LBN_SELCHANGE,
+    LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW,
+    LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL,
+    MF_BYCOMMAND, MF_CHECKED, MF_ENABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING,
+    MF_UNCHECKED, MSG, MessageBoxW, PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON,
+    SM_CYICON, SM_CYSMICON, SW_HIDE, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SYSTEM_METRICS_INDEX, SendMessageW, SetClassLongPtrW, SetCursor, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WM_ACTIVATEAPP,
+    WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLORLISTBOX, WM_DESTROY, WM_DROPFILES,
+    WM_GETICON, WM_INITMENUPOPUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE,
+    WM_NCDESTROY, WM_NOTIFY, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_BORDER,
+    WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
 };
 use windows::core::PWSTR;
 use windows::core::{HSTRING, PCWSTR, w};
@@ -100,6 +101,7 @@ const IDM_EDIT_FIND_PREV: u16 = 322;
 const IDM_EDIT_REPLACE: u16 = 323;
 const IDM_EDIT_REPLACE_ALL: u16 = 324;
 const IDM_EDIT_FIND_IN_FILES: u16 = 325;
+const IDM_EDIT_GOTO_LINE: u16 = 332;
 const CMD_TRANSFORM_UPPERCASE: u16 = 326;
 const CMD_TRANSFORM_LOWERCASE: u16 = 327;
 const CMD_COPY_FULL_PATH: u16 = 328;
@@ -135,6 +137,7 @@ const VK_A: u16 = 0x41;
 const VK_C: u16 = 0x43;
 const VK_D: u16 = 0x44;
 const VK_F: u16 = 0x46;
+const VK_G: u16 = 0x47;
 const VK_H: u16 = 0x48;
 const VK_L: u16 = 0x4C;
 const VK_T: u16 = 0x54;
@@ -178,9 +181,13 @@ const IDC_FIF_CANCEL: usize = 5111;
 const IDC_FIF_CLOSE: usize = 5112;
 const IDC_FIF_RESULTS: usize = 5113;
 const IDC_TAB_LIST: usize = 5201;
+const IDC_GOTO_LINE: usize = 5301;
+const IDC_GOTO_GO: usize = 5302;
+const IDC_GOTO_CANCEL: usize = 5303;
 
 const FIND_CLASS: PCWSTR = w!("rivet_find_dialog");
 const FIND_FILES_CLASS: PCWSTR = w!("rivet_find_in_files");
+const GOTO_LINE_CLASS: PCWSTR = w!("rivet_goto_line_dialog");
 const SPLITTER_CLASS: PCWSTR = w!("rivet_tab_splitter");
 
 const SCFIND_MATCHCASE: usize = 0x4;
@@ -190,6 +197,7 @@ const SCFIND_REGEXP: usize = 0x0020_0000;
 #[link(name = "user32")]
 unsafe extern "system" {
     fn SetFocus(hwnd: HWND) -> HWND;
+    fn EnableWindow(hwnd: HWND, benable: BOOL) -> BOOL;
 }
 
 struct DocTab {
@@ -225,6 +233,12 @@ struct FindDialogState {
     whole_word: HWND,
     regex: HWND,
     wrap: HWND,
+}
+
+struct GoToLineDialogState {
+    hwnd: HWND,
+    range_label: HWND,
+    line_edit: HWND,
 }
 
 struct FindHit {
@@ -298,6 +312,7 @@ struct AppState {
     next_untitled_index: usize,
     find_state: FindState,
     find_dialog: Option<FindDialogState>,
+    go_to_line_dialog: Option<GoToLineDialogState>,
     find_in_files: Option<FindInFilesState>,
 }
 
@@ -490,6 +505,12 @@ fn create_menu() -> Result<HMENU> {
         AppendMenuW(
             edit_menu,
             MF_STRING,
+            IDM_EDIT_GOTO_LINE as usize,
+            w!("Go To Line..."),
+        )?;
+        AppendMenuW(
+            edit_menu,
+            MF_STRING,
             IDM_EDIT_FIND_IN_FILES as usize,
             w!("Find in Files..."),
         )?;
@@ -605,6 +626,7 @@ fn create_menu() -> Result<HMENU> {
 fn register_aux_classes(instance: HINSTANCE) -> Result<()> {
     register_window_class(instance, FIND_CLASS, Some(find_wndproc))?;
     register_window_class(instance, FIND_FILES_CLASS, Some(find_in_files_wndproc))?;
+    register_window_class(instance, GOTO_LINE_CLASS, Some(goto_line_wndproc))?;
     register_window_class(instance, SPLITTER_CLASS, Some(splitter_wndproc))?;
     Ok(())
 }
@@ -733,6 +755,11 @@ fn create_accelerators() -> Result<HACCEL> {
             fVirt: FVIRTKEY | FCONTROL,
             key: VK_H,
             cmd: IDM_EDIT_REPLACE,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY | FCONTROL,
+            key: VK_G,
+            cmd: IDM_EDIT_GOTO_LINE,
         },
         ACCEL {
             fVirt: FVIRTKEY | FCONTROL | FSHIFT,
@@ -1020,6 +1047,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 IDM_EDIT_REPLACE_ALL => {
                     if let Some(state) = get_state(hwnd)
                         && let Err(err) = perform_replace_all(hwnd, state)
+                    {
+                        show_error("Rivet error", &err.to_string());
+                    }
+                    LRESULT(0)
+                }
+                IDM_EDIT_GOTO_LINE => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Err(err) = show_go_to_line_dialog(hwnd, state)
                     {
                         show_error("Rivet error", &err.to_string());
                     }
@@ -1634,6 +1669,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
             last_direction: SearchDirection::Down,
         },
         find_dialog: None,
+        go_to_line_dialog: None,
         find_in_files: None,
     };
 
@@ -2268,6 +2304,100 @@ fn show_find_dialog(hwnd: HWND, state: &mut AppState, find_only: bool) -> Result
     Ok(())
 }
 
+fn show_go_to_line_dialog(hwnd: HWND, state: &mut AppState) -> Result<()> {
+    if active_editor(state).is_none() {
+        return Ok(());
+    }
+    if let Some(dialog) = &state.go_to_line_dialog {
+        unsafe {
+            ShowWindow(dialog.hwnd, SW_SHOW);
+            let _ = SetFocus(dialog.line_edit);
+        }
+        apply_go_to_line_state(state)?;
+        return Ok(());
+    }
+
+    let instance = module_instance()?;
+    let width = scale_for_dpi(hwnd, 280);
+    let height = scale_for_dpi(hwnd, 150);
+    let hwnd_dialog = unsafe {
+        CreateWindowExW(
+            Default::default(),
+            GOTO_LINE_CLASS,
+            w!("Go To Line"),
+            window_style(WS_CAPTION.0 | WS_SYSMENU.0),
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            width,
+            height,
+            hwnd,
+            HMENU(0),
+            instance,
+            Some(hwnd.0 as *const std::ffi::c_void),
+        )
+    };
+
+    if hwnd_dialog.0 == 0 {
+        return Err(AppError::win32("CreateWindowExW(GoToLineDialog)"));
+    }
+
+    unsafe {
+        EnableWindow(hwnd, BOOL(0));
+        ShowWindow(hwnd_dialog, SW_SHOW);
+    }
+    Ok(())
+}
+
+fn apply_go_to_line_state(state: &AppState) -> Result<()> {
+    let dialog = match &state.go_to_line_dialog {
+        Some(dialog) => dialog,
+        None => return Ok(()),
+    };
+    let editor = match active_editor(state) {
+        Some(editor) => editor,
+        None => return Ok(()),
+    };
+    let line_count = scintilla::line_count(editor).max(1);
+    let current_line = scintilla::line_from_position(editor, scintilla::get_current_pos(editor))
+        .saturating_add(1)
+        .min(line_count);
+    set_window_text(
+        dialog.range_label,
+        &format!("Line number (1 - {line_count}):"),
+    );
+    set_window_text(dialog.line_edit, &current_line.to_string());
+    Ok(())
+}
+
+fn confirm_go_to_line(main_hwnd: HWND, state: &mut AppState) -> Result<()> {
+    let dialog = match &state.go_to_line_dialog {
+        Some(dialog) => dialog,
+        None => return Ok(()),
+    };
+    let editor = match active_editor(state) {
+        Some(editor) => editor,
+        None => return Ok(()),
+    };
+    let line_count = scintilla::line_count(editor).max(1);
+    let raw = get_window_text(dialog.line_edit)?;
+    let requested = raw.trim().parse::<usize>().unwrap_or(1);
+    let clamped = requested.clamp(1, line_count);
+    scintilla::goto_line(editor, clamped.saturating_sub(1));
+    update_status(state);
+    close_go_to_line_dialog(main_hwnd, state);
+    Ok(())
+}
+
+fn close_go_to_line_dialog(main_hwnd: HWND, state: &mut AppState) {
+    if let Some(dialog) = state.go_to_line_dialog.take() {
+        unsafe {
+            EnableWindow(main_hwnd, BOOL(1));
+            let _ = SetFocus(main_hwnd);
+            DestroyWindow(dialog.hwnd).ok();
+        }
+    }
+}
+
 fn show_find_in_files_dialog(hwnd: HWND, state: &mut AppState) -> Result<()> {
     if let Some(dialog) = &state.find_in_files {
         unsafe {
@@ -2339,7 +2469,9 @@ fn perform_replace(hwnd: HWND, state: &mut AppState) -> Result<()> {
     }
     state.find_state.last_direction = SearchDirection::Down;
     if let Some(editor) = active_editor(state) {
-        replace_in_editor(editor, &state.find_state);
+        if replace_in_editor(editor, &state.find_state) {
+            let _ = find_in_editor(editor, &state.find_state, SearchDirection::Down);
+        }
         update_status(state);
     }
     Ok(())
@@ -2392,9 +2524,9 @@ fn find_in_editor(editor: HWND, state: &FindState, direction: SearchDirection) -
     }
 }
 
-fn replace_in_editor(editor: HWND, state: &FindState) {
+fn replace_in_editor(editor: HWND, state: &FindState) -> bool {
     if state.find_text.is_empty() {
-        return;
+        return false;
     }
     let selection_start = scintilla::selection_start(editor);
     let selection_end = scintilla::selection_end(editor);
@@ -2404,13 +2536,14 @@ fn replace_in_editor(editor: HWND, state: &FindState) {
     } else {
         match find_match(editor, state, state.last_direction) {
             Some(range) => range,
-            None => return,
+            None => return false,
         }
     };
     scintilla::set_target_range(editor, match_start, match_end);
     scintilla::replace_target(editor, &state.replace_text);
     let new_end = match_start.saturating_add(state.replace_text.len());
     scintilla::set_selection(editor, match_start, new_end);
+    true
 }
 
 fn selection_matches_find(editor: HWND, state: &FindState) -> bool {
@@ -4649,6 +4782,163 @@ unsafe extern "system" fn find_wndproc(
             let main_hwnd = unsafe { HWND(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
             if let Some(state) = get_state(main_hwnd) {
                 state.find_dialog = None;
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
+        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+unsafe extern "system" fn goto_line_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        WM_CREATE => {
+            let createstruct = unsafe {
+                &*(lparam.0 as *const windows::Win32::UI::WindowsAndMessaging::CREATESTRUCTW)
+            };
+            let main_hwnd = HWND(createstruct.lpCreateParams as isize);
+            unsafe {
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, main_hwnd.0);
+            }
+
+            let instance: HINSTANCE = match unsafe { GetModuleHandleW(None) } {
+                Ok(value) => value.into(),
+                Err(_) => return LRESULT(-1),
+            };
+
+            let scale = |value: i32| scale_for_dpi(hwnd, value);
+            let label = unsafe {
+                CreateWindowExW(
+                    Default::default(),
+                    w!("Static"),
+                    w!("Line number (1 - 1):"),
+                    WS_CHILD | WS_VISIBLE,
+                    scale(12),
+                    scale(14),
+                    scale(240),
+                    scale(20),
+                    hwnd,
+                    HMENU(0),
+                    instance,
+                    None,
+                )
+            };
+            let line_edit = unsafe {
+                CreateWindowExW(
+                    Default::default(),
+                    w!("Edit"),
+                    PCWSTR::null(),
+                    window_style(
+                        WS_CHILD.0
+                            | WS_VISIBLE.0
+                            | WS_BORDER.0
+                            | ES_AUTOHSCROLL as u32
+                            | ES_NUMBER as u32
+                            | WS_TABSTOP.0,
+                    ),
+                    scale(12),
+                    scale(38),
+                    scale(248),
+                    scale(22),
+                    hwnd,
+                    menu_id(IDC_GOTO_LINE),
+                    instance,
+                    None,
+                )
+            };
+            let go_btn = unsafe {
+                CreateWindowExW(
+                    Default::default(),
+                    w!("Button"),
+                    w!("Go"),
+                    window_style(
+                        WS_CHILD.0 | WS_VISIBLE.0 | BS_DEFPUSHBUTTON as u32 | WS_TABSTOP.0,
+                    ),
+                    scale(94),
+                    scale(74),
+                    scale(78),
+                    scale(24),
+                    hwnd,
+                    menu_id(IDC_GOTO_GO),
+                    instance,
+                    None,
+                )
+            };
+            let cancel_btn = unsafe {
+                CreateWindowExW(
+                    Default::default(),
+                    w!("Button"),
+                    w!("Cancel"),
+                    window_style(WS_CHILD.0 | WS_VISIBLE.0 | BS_PUSHBUTTON as u32 | WS_TABSTOP.0),
+                    scale(182),
+                    scale(74),
+                    scale(78),
+                    scale(24),
+                    hwnd,
+                    menu_id(IDC_GOTO_CANCEL),
+                    instance,
+                    None,
+                )
+            };
+
+            let _ = go_btn;
+            let _ = cancel_btn;
+
+            if let Some(state) = get_state(main_hwnd) {
+                state.go_to_line_dialog = Some(GoToLineDialogState {
+                    hwnd,
+                    range_label: label,
+                    line_edit,
+                });
+                let _ = apply_go_to_line_state(state);
+                unsafe {
+                    let _ = SetFocus(line_edit);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            let main_hwnd = unsafe { HWND(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
+            if let Some(state) = get_state(main_hwnd) {
+                match loword(wparam.0) as usize {
+                    IDC_GOTO_GO => {
+                        if let Err(err) = confirm_go_to_line(main_hwnd, state) {
+                            show_error("Rivet error", &err.to_string());
+                        }
+                    }
+                    IDC_GOTO_CANCEL => {
+                        close_go_to_line_dialog(main_hwnd, state);
+                    }
+                    _ => {}
+                }
+            }
+            LRESULT(0)
+        }
+        WM_CLOSE => {
+            let main_hwnd = unsafe { HWND(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
+            if let Some(state) = get_state(main_hwnd) {
+                close_go_to_line_dialog(main_hwnd, state);
+            } else {
+                unsafe { DestroyWindow(hwnd).ok() };
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            let main_hwnd = unsafe { HWND(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
+            if let Some(state) = get_state(main_hwnd)
+                && state
+                    .go_to_line_dialog
+                    .as_ref()
+                    .is_some_and(|dialog| dialog.hwnd == hwnd)
+            {
+                state.go_to_line_dialog = None;
+                unsafe {
+                    EnableWindow(main_hwnd, BOOL(1));
+                }
             }
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }

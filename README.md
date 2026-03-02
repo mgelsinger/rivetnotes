@@ -9,7 +9,9 @@ way, Rivet is the point.
 
 - Tabbed editing with horizontal or vertical tab layout
 - Session snapshot + periodic backup (Notepad++-style restore of unsaved work)
-- Find/replace plus Find in Files with cancellation
+- Find/Replace core flow: `Ctrl+F`, `Ctrl+H`, `F3`, `Shift+F3`, `Replace`, `Replace All` (single undo step), wrap-around, match case, whole word
+- Go To Line (`Ctrl+G`) using Scintilla line navigation
+- Find in Files with cancellation
 - Syntax highlighting for common formats
 - Word wrap toggle (on by default) and `Always On Top` toggle in `View`
 - Status bar truth fields: `Ln/Col`, `Sel`, `EOL`, `ENC`, dirty indicator
