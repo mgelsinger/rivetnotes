@@ -7,6 +7,12 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 - TBD.
 
+## [0.4.3] - 2026-03-03
+
+- Added a `View -> Dark Mode` toggle so users can switch between light and dark themes.
+- Persisted editor theme choice in `settings.json` via a new `editor_dark` field.
+- Fixed startup theme initialization to honor persisted settings instead of forcing dark mode.
+
 ## [0.4.2] - 2026-03-03
 
 - Added selection-driven Smart Highlight using Scintilla container indicators

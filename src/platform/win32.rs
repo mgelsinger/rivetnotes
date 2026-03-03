@@ -664,6 +664,12 @@ fn create_menu() -> Result<HMENU> {
         AppendMenuW(
             view_menu,
             MF_STRING,
+            IDM_VIEW_EDITOR_DARK as usize,
+            w!("Dark Mode"),
+        )?;
+        AppendMenuW(
+            view_menu,
+            MF_STRING,
             CMD_VIEW_ALWAYS_ON_TOP as usize,
             w!("Always On Top"),
         )?;
@@ -1763,7 +1769,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         return Err(AppError::win32("CreateWindowExW(StatusBar)"));
     }
 
-    let theme = tab_theme(true);
+    let theme = tab_theme(ui_settings.editor_dark);
     let vertical_tabs_brush = unsafe { CreateSolidBrush(theme.bg) };
     if vertical_tabs_brush.0 == 0 {
         return Err(AppError::win32("CreateSolidBrush(VerticalTabs)"));
@@ -1786,7 +1792,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         status,
         docs: Vec::new(),
         active: 0,
-        editor_dark: true,
+        editor_dark: ui_settings.editor_dark,
         next_tab_runtime_id: 1,
         always_on_top: session::DEFAULT_ALWAYS_ON_TOP,
         icon_big,
@@ -4740,6 +4746,7 @@ fn persist_ui_settings(state: &AppState) {
     let mut settings = state.ui_settings;
     settings.tab_placement = state.tab_host.placement;
     settings.vertical_tab_width_px = state.tab_host.vertical_width_px;
+    settings.editor_dark = state.editor_dark;
     if let Err(err) = settings::save_settings(&settings) {
         logging::log_error(&format!("settings_save_failed err={err}"));
     }
@@ -4779,6 +4786,7 @@ fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
     unsafe {
         InvalidateRect(state.tab_host.vertical_tabs, None, true);
     }
+    persist_ui_settings(state);
 }
 
 fn set_tab_layout(hwnd: HWND, state: &mut AppState, layout: TabPlacement) {

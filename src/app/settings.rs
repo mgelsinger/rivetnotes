@@ -10,6 +10,7 @@ pub const SETTINGS_FILE_NAME: &str = "settings.json";
 pub const MIN_VERTICAL_TAB_WIDTH_PX: i32 = 80;
 pub const MAX_VERTICAL_TAB_WIDTH_PX: i32 = 600;
 pub const DEFAULT_VERTICAL_TAB_WIDTH_PX: i32 = 180;
+pub const DEFAULT_EDITOR_DARK: bool = true;
 pub const DEFAULT_SMART_HIGHLIGHT_ENABLED: bool = true;
 pub const DEFAULT_SMART_HIGHLIGHT_MATCH_CASE: bool = false;
 pub const DEFAULT_SMART_HIGHLIGHT_WHOLE_WORD: bool = true;
@@ -44,6 +45,8 @@ pub struct UiSettings {
     pub tab_placement: TabPlacement,
     #[serde(default = "default_vertical_tab_width_px")]
     pub vertical_tab_width_px: i32,
+    #[serde(default = "default_editor_dark")]
+    pub editor_dark: bool,
     #[serde(default = "default_smart_highlight_enabled")]
     pub smart_highlight_enabled: bool,
     #[serde(default = "default_smart_highlight_match_case")]
@@ -63,6 +66,7 @@ impl Default for UiSettings {
         Self {
             tab_placement: TabPlacement::Top,
             vertical_tab_width_px: DEFAULT_VERTICAL_TAB_WIDTH_PX,
+            editor_dark: DEFAULT_EDITOR_DARK,
             smart_highlight_enabled: DEFAULT_SMART_HIGHLIGHT_ENABLED,
             smart_highlight_match_case: DEFAULT_SMART_HIGHLIGHT_MATCH_CASE,
             smart_highlight_whole_word: DEFAULT_SMART_HIGHLIGHT_WHOLE_WORD,
@@ -121,6 +125,10 @@ fn default_vertical_tab_width_px() -> i32 {
 
 fn default_smart_highlight_enabled() -> bool {
     DEFAULT_SMART_HIGHLIGHT_ENABLED
+}
+
+fn default_editor_dark() -> bool {
+    DEFAULT_EDITOR_DARK
 }
 
 fn default_smart_highlight_match_case() -> bool {
@@ -227,6 +235,7 @@ mod tests {
         let settings = UiSettings {
             tab_placement: TabPlacement::Right,
             vertical_tab_width_px: 320,
+            editor_dark: false,
             smart_highlight_enabled: false,
             smart_highlight_match_case: true,
             smart_highlight_whole_word: false,
@@ -237,6 +246,7 @@ mod tests {
         let json = serde_json::to_string_pretty(&settings).unwrap();
         assert!(json.contains("\"tab_placement\": \"right\""));
         assert!(json.contains("\"vertical_tab_width_px\": 320"));
+        assert!(json.contains("\"editor_dark\": false"));
         assert!(json.contains("\"smart_highlight_enabled\": false"));
         assert!(json.contains("\"large_file_threshold_mb\": 50"));
 
@@ -283,6 +293,7 @@ mod tests {
             let loaded = load_settings().unwrap();
             assert_eq!(loaded.tab_placement, TabPlacement::Left);
             assert_eq!(loaded.vertical_tab_width_px, MAX_VERTICAL_TAB_WIDTH_PX);
+            assert_eq!(loaded.editor_dark, DEFAULT_EDITOR_DARK);
             assert_eq!(loaded.large_file_threshold_mb, MIN_LARGE_FILE_THRESHOLD_MB);
         });
     }
