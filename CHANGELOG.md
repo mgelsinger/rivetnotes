@@ -7,6 +7,22 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 - TBD.
 
+## [0.4.2] - 2026-03-03
+
+- Added selection-driven Smart Highlight using Scintilla container indicators
+  (`INDIC_ROUNDBOX`) with theme-aware colors/alpha and bounded
+  `SCI_SEARCHINTARGET` scanning.
+- Added temporary line folding commands in `View`: `Hide Lines` and
+  `Unhide All Lines`, including keyboard shortcuts (`Alt+H`, `Alt+Shift+H`).
+- Added document-tab keyboard cycling with wrap-around for
+  `Ctrl+Tab` / `Ctrl+Shift+Tab` and `Ctrl+PageDown` / `Ctrl+PageUp`.
+- Introduced Large File Mode restrictions with configurable threshold and
+  toggles in `settings.json`, including smart-highlight suppression by default
+  and optional global word-wrap deactivation.
+- Updated status/title indicators to surface Large File Mode state and
+  smart-highlight truncation ("Too many matches").
+- Added unit tests for new settings fields/clamping and large-file/token helper logic.
+
 ## [0.4.1] - 2026-03-03
 
 - Fixed CI failures for `cargo fmt --check` and `cargo clippy -- -D warnings`
