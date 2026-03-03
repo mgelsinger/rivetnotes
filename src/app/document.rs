@@ -5,8 +5,6 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 
-pub const LARGE_FILE_THRESHOLD: u64 = 100 * 1024 * 1024;
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum TextEncoding {
     Utf8,
@@ -107,10 +105,6 @@ impl Document {
         self.stamp = Some(stamp);
         self.is_dirty = false;
     }
-}
-
-pub fn is_large_file(size: u64) -> bool {
-    size >= LARGE_FILE_THRESHOLD
 }
 
 pub fn detect_eol(text: &str) -> Eol {
@@ -322,6 +316,10 @@ mod tests {
 
     #[test]
     fn large_file_threshold() {
+        const LARGE_FILE_THRESHOLD: u64 = 100 * 1024 * 1024;
+        fn is_large_file(size: u64) -> bool {
+            size >= LARGE_FILE_THRESHOLD
+        }
         assert!(is_large_file(LARGE_FILE_THRESHOLD));
         assert!(!is_large_file(LARGE_FILE_THRESHOLD - 1));
     }

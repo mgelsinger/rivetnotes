@@ -87,6 +87,16 @@ const SCI_SETCARETLINEBACKALPHA: u32 = 2470;
 const SCI_SETPROPERTY: u32 = 4004;
 const SCI_SETKEYWORDS: u32 = 4005;
 const SCI_SETILEXER: u32 = 4033;
+const SCI_INDICSETSTYLE: u32 = 2080;
+const SCI_INDICSETFORE: u32 = 2082;
+const SCI_SHOWLINES: u32 = 2226;
+const SCI_HIDELINES: u32 = 2227;
+const SCI_SETELEMENTCOLOUR: u32 = 2753;
+const SCI_SETINDICATORCURRENT: u32 = 2500;
+const SCI_INDICATORFILLRANGE: u32 = 2504;
+const SCI_INDICATORCLEARRANGE: u32 = 2505;
+const SCI_INDICSETALPHA: u32 = 2523;
+const SCI_INDICSETOUTLINEALPHA: u32 = 2558;
 
 const SC_CP_UTF8: usize = 65001;
 const SC_EOL_CRLF: usize = 0;
@@ -100,6 +110,8 @@ const SC_POPUP_NEVER: usize = 0;
 const SCMOD_SHIFT: usize = 0x1;
 const SCMOD_CTRL: usize = 0x2;
 const KEY_U: usize = b'U' as usize;
+const INDIC_ROUNDBOX: usize = 7;
+const SC_ELEMENT_HIDDEN_LINE: usize = 81;
 
 const STYLE_DEFAULT: usize = 32;
 
@@ -555,6 +567,54 @@ pub fn get_codepage(hwnd: HWND) -> i32 {
 pub fn set_wrap_enabled(hwnd: HWND, enabled: bool) {
     let mode = if enabled { SC_WRAP_WORD } else { SC_WRAP_NONE };
     send_message(hwnd, SCI_SETWRAPMODE, mode, 0);
+}
+
+pub fn configure_smart_highlight_indicator(
+    hwnd: HWND,
+    indicator: usize,
+    fore_rgb: u32,
+    fill_alpha: usize,
+    outline_alpha: usize,
+) {
+    send_message(hwnd, SCI_INDICSETSTYLE, indicator, INDIC_ROUNDBOX as isize);
+    send_message(hwnd, SCI_INDICSETFORE, indicator, fore_rgb as isize);
+    send_message(hwnd, SCI_INDICSETALPHA, indicator, fill_alpha as isize);
+    send_message(
+        hwnd,
+        SCI_INDICSETOUTLINEALPHA,
+        indicator,
+        outline_alpha as isize,
+    );
+}
+
+pub fn set_indicator_current(hwnd: HWND, indicator: usize) {
+    send_message(hwnd, SCI_SETINDICATORCURRENT, indicator, 0);
+}
+
+pub fn fill_indicator_range(hwnd: HWND, start: usize, len: usize) {
+    send_message(hwnd, SCI_INDICATORFILLRANGE, start, len as isize);
+}
+
+pub fn clear_indicator_range(hwnd: HWND, start: usize, len: usize) {
+    send_message(hwnd, SCI_INDICATORCLEARRANGE, start, len as isize);
+}
+
+pub fn hide_lines(hwnd: HWND, line_start: usize, line_end: usize) {
+    send_message(hwnd, SCI_HIDELINES, line_start, line_end as isize);
+}
+
+pub fn show_lines(hwnd: HWND, line_start: usize, line_end: usize) {
+    send_message(hwnd, SCI_SHOWLINES, line_start, line_end as isize);
+}
+
+pub fn set_hidden_line_color(hwnd: HWND, rgb: u32) {
+    let colour_alpha = rgb | 0xFF00_0000;
+    send_message(
+        hwnd,
+        SCI_SETELEMENTCOLOUR,
+        SC_ELEMENT_HIDDEN_LINE,
+        colour_alpha as isize,
+    );
 }
 
 fn lexer_name(lexer: LexerKind) -> &'static str {

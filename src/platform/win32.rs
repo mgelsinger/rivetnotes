@@ -120,6 +120,10 @@ const IDM_VIEW_TABS_VERTICAL_RIGHT: u16 = 343;
 const IDM_VIEW_TABS_CYCLE: u16 = 344;
 const IDM_VIEW_WORD_WRAP: u16 = 345;
 const CMD_VIEW_ALWAYS_ON_TOP: u16 = 346;
+const CMD_VIEW_HIDE_LINES: u16 = 347;
+const CMD_VIEW_UNHIDE_ALL_LINES: u16 = 348;
+const CMD_TAB_NEXT: u16 = 349;
+const CMD_TAB_PREV: u16 = 350;
 const IDM_TAB_CLOSE: u16 = 220;
 const IDM_TAB_CLOSE_OTHERS: u16 = 221;
 const IDM_TAB_CLOSE_RIGHT: u16 = 222;
@@ -133,6 +137,9 @@ const TIMER_FIND_RESULTS: usize = 2;
 const TIMER_WORD_COUNT: usize = 3;
 const WORD_COUNT_INTERVAL_MS: u32 = 250;
 const TAB_SPLITTER_WIDTH: i32 = 4;
+const SMART_HL_INDIC: usize = 8;
+const SMART_HL_MAX_TOKEN_LEN: usize = 128;
+const SMART_HL_MAX_MATCHES: usize = 5000;
 
 const SCN_SAVEPOINTREACHED: u32 = 2002;
 const SCN_SAVEPOINTLEFT: u32 = 2003;
@@ -157,6 +164,9 @@ const VK_N: u16 = 0x4E;
 const VK_S: u16 = 0x53;
 const VK_OEM_4: u16 = 0xDB;
 const VK_OEM_6: u16 = 0xDD;
+const VK_TAB: u16 = 0x09;
+const VK_PRIOR: u16 = 0x21;
+const VK_NEXT: u16 = 0x22;
 const VK_UP: u16 = 0x26;
 const VK_DOWN: u16 = 0x28;
 
@@ -214,6 +224,8 @@ struct DocTab {
     word_count: Option<usize>,
     change_counter: u64,
     last_backup_change_counter: Option<u64>,
+    smart_highlight_token: Option<String>,
+    smart_highlight_truncated: bool,
 }
 
 struct FindState {
@@ -307,6 +319,7 @@ impl TabStripHost {
 
 struct AppState {
     tab_host: TabStripHost,
+    ui_settings: UiSettings,
     status: HWND,
     docs: Vec<DocTab>,
     active: usize,
@@ -632,6 +645,19 @@ fn create_menu() -> Result<HMENU> {
         AppendMenuW(
             view_menu,
             MF_STRING,
+            CMD_VIEW_HIDE_LINES as usize,
+            w!("Hide Lines"),
+        )?;
+        AppendMenuW(
+            view_menu,
+            MF_STRING,
+            CMD_VIEW_UNHIDE_ALL_LINES as usize,
+            w!("Unhide All Lines"),
+        )?;
+        AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        AppendMenuW(
+            view_menu,
+            MF_STRING,
             IDM_VIEW_WORD_WRAP as usize,
             w!("Word Wrap"),
         )?;
@@ -873,6 +899,36 @@ fn create_accelerators() -> Result<HACCEL> {
             fVirt: FVIRTKEY | FCONTROL | FALT,
             key: VK_T,
             cmd: IDM_VIEW_TABS_CYCLE,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY | FCONTROL,
+            key: VK_TAB,
+            cmd: CMD_TAB_NEXT,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY | FCONTROL | FSHIFT,
+            key: VK_TAB,
+            cmd: CMD_TAB_PREV,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY | FCONTROL,
+            key: VK_NEXT,
+            cmd: CMD_TAB_NEXT,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY | FCONTROL,
+            key: VK_PRIOR,
+            cmd: CMD_TAB_PREV,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY | FALT,
+            key: VK_H,
+            cmd: CMD_VIEW_HIDE_LINES,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY | FALT | FSHIFT,
+            key: VK_H,
+            cmd: CMD_VIEW_UNHIDE_ALL_LINES,
         },
     ];
 
@@ -1250,10 +1306,38 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
+                CMD_VIEW_HIDE_LINES => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Some(editor) = active_editor(state)
+                    {
+                        hide_selected_or_current_lines(editor);
+                    }
+                    LRESULT(0)
+                }
+                CMD_VIEW_UNHIDE_ALL_LINES => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Some(editor) = active_editor(state)
+                    {
+                        show_all_lines(editor);
+                    }
+                    LRESULT(0)
+                }
                 CMD_VIEW_ALWAYS_ON_TOP => {
                     if let Some(state) = get_state(hwnd) {
                         let enabled = !state.always_on_top;
                         set_always_on_top(hwnd, state, enabled);
+                    }
+                    LRESULT(0)
+                }
+                CMD_TAB_NEXT => {
+                    if let Some(state) = get_state(hwnd) {
+                        select_adjacent_tab(hwnd, state, true);
+                    }
+                    LRESULT(0)
+                }
+                CMD_TAB_PREV => {
+                    if let Some(state) = get_state(hwnd) {
+                        select_adjacent_tab(hwnd, state, false);
                     }
                     LRESULT(0)
                 }
@@ -1446,6 +1530,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
                 if nmhdr.code == SCN_UPDATEUI {
                     if let Some(state) = get_state(hwnd) {
+                        if let Some(index) = doc_index_by_hwnd(state, nmhdr.hwndFrom)
+                            && index == state.active
+                        {
+                            update_smart_highlight_for_doc(state, index, false);
+                        }
                         update_status(state);
                     }
                     return LRESULT(0);
@@ -1459,6 +1548,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                             doc_tab.change_counter = doc_tab.change_counter.saturating_add(1);
                             doc_tab.doc.cursor_pos =
                                 scintilla::get_current_pos(doc_tab.editor) as i64;
+                        }
+                        if let Some(index) = doc_index_by_hwnd(state, nmhdr.hwndFrom)
+                            && index == state.active
+                        {
+                            update_smart_highlight_for_doc(state, index, true);
                         }
                         schedule_word_count(hwnd, state);
                         update_status(state);
@@ -1688,6 +1782,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
             drag_start_x_screen: 0,
             drag_start_width: 0,
         },
+        ui_settings,
         status,
         docs: Vec::new(),
         active: 0,
@@ -1910,7 +2005,12 @@ fn open_path_new_tab(
     eol: Option<Eol>,
 ) -> Result<()> {
     let instance = module_instance()?;
-    let mut doc_tab = create_doc_from_path(hwnd, instance, path)?;
+    let mut doc_tab = create_doc_from_path(
+        hwnd,
+        instance,
+        path,
+        state.ui_settings.large_file_threshold_mb,
+    )?;
     if let Some(encoding) = encoding {
         doc_tab.doc.encoding = encoding;
     }
@@ -1931,6 +2031,7 @@ fn open_path_new_tab(
     apply_syntax_for_doc(&doc_tab, state.editor_dark);
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     select_tab(hwnd, state, index);
+    apply_large_file_mode_restrictions(hwnd, state, index);
     if let Some(caret) = caret {
         let editor = state.docs[index].editor;
         scintilla::goto_pos(editor, caret);
@@ -1975,64 +2076,73 @@ fn save_document_at(
     encoding_override: Option<TextEncoding>,
     force_save_as: bool,
 ) -> Result<bool> {
-    let doc_tab = state
-        .docs
-        .get_mut(index)
-        .ok_or_else(|| AppError::new("No active document."))?;
-    let encoding = encoding_override.unwrap_or(doc_tab.doc.encoding);
-    let path = if force_save_as || doc_tab.doc.path.is_none() {
+    let (encoding, existing_path) = {
+        let doc_tab = state
+            .docs
+            .get(index)
+            .ok_or_else(|| AppError::new("No active document."))?;
+        (
+            encoding_override.unwrap_or(doc_tab.doc.encoding),
+            doc_tab.doc.path.clone(),
+        )
+    };
+    let path = if force_save_as || existing_path.is_none() {
         match save_file_dialog(hwnd)? {
             Some(path) => path,
             None => return Ok(false),
         }
     } else {
+        existing_path.ok_or_else(|| AppError::new("No file path available."))?
+    };
+    let backup_path = {
+        let doc_tab = state
+            .docs
+            .get_mut(index)
+            .ok_or_else(|| AppError::new("No active document."))?;
+        let text = scintilla::get_text(doc_tab.editor)?;
+        let normalized = document::normalize_eol(&text, doc_tab.doc.eol);
+        let bytes = document::encode_text(&normalized, encoding)?;
+
+        std::fs::write(&path, &bytes)
+            .map_err(|err| AppError::new(format!("Failed to write file: {err}")))?;
+
+        let stamp = document::FileStamp::from_path(&path)?;
+        doc_tab.doc.path = Some(path.clone());
+        doc_tab.doc.display_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Untitled")
+            .to_string();
         doc_tab
             .doc
-            .path
-            .clone()
-            .ok_or_else(|| AppError::new("No file path available."))?
+            .update_after_save(encoding, doc_tab.doc.eol, stamp);
+        doc_tab.doc.large_file_mode = is_large_file_size(
+            state.ui_settings.large_file_threshold_mb,
+            doc_tab
+                .doc
+                .stamp
+                .as_ref()
+                .map(|stamp| stamp.size)
+                .unwrap_or(0),
+        );
+        doc_tab.word_count = if doc_tab.doc.large_file_mode {
+            None
+        } else {
+            Some(count_words(&text))
+        };
+        doc_tab.wrap_enabled = doc_tab.wrap_enabled && !doc_tab.doc.large_file_mode;
+        scintilla::set_wrap_enabled(doc_tab.editor, doc_tab.wrap_enabled);
+        apply_syntax_for_doc(doc_tab, state.editor_dark);
+        scintilla::set_savepoint(doc_tab.editor);
+        doc_tab.doc.is_dirty = false;
+        doc_tab.change_counter = doc_tab.change_counter.saturating_add(1);
+        doc_tab.last_backup_change_counter = None;
+        doc_tab.doc.first_backup_write = None;
+        doc_tab.doc.last_backup_write = None;
+        doc_tab.doc.backup_path.clone()
     };
-
-    let text = scintilla::get_text(doc_tab.editor)?;
-    let normalized = document::normalize_eol(&text, doc_tab.doc.eol);
-    let bytes = document::encode_text(&normalized, encoding)?;
-
-    std::fs::write(&path, &bytes)
-        .map_err(|err| AppError::new(format!("Failed to write file: {err}")))?;
-
-    let stamp = document::FileStamp::from_path(&path)?;
-    doc_tab.doc.path = Some(path.clone());
-    doc_tab.doc.display_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("Untitled")
-        .to_string();
-    doc_tab
-        .doc
-        .update_after_save(encoding, doc_tab.doc.eol, stamp);
-    doc_tab.doc.large_file_mode = document::is_large_file(
-        doc_tab
-            .doc
-            .stamp
-            .as_ref()
-            .map(|stamp| stamp.size)
-            .unwrap_or(0),
-    );
-    doc_tab.word_count = if doc_tab.doc.large_file_mode {
-        None
-    } else {
-        Some(count_words(&text))
-    };
-    doc_tab.wrap_enabled = doc_tab.wrap_enabled && !doc_tab.doc.large_file_mode;
-    scintilla::set_wrap_enabled(doc_tab.editor, doc_tab.wrap_enabled);
-    apply_syntax_for_doc(doc_tab, state.editor_dark);
-    scintilla::set_savepoint(doc_tab.editor);
-    doc_tab.doc.is_dirty = false;
-    doc_tab.change_counter = doc_tab.change_counter.saturating_add(1);
-    doc_tab.last_backup_change_counter = None;
-    doc_tab.doc.first_backup_write = None;
-    doc_tab.doc.last_backup_write = None;
-    if let Err(err) = session::delete_backup(&doc_tab.doc.backup_path) {
+    apply_large_file_mode_restrictions(hwnd, state, index);
+    if let Err(err) = session::delete_backup(&backup_path) {
         logging::log_error(&format!(
             "backup_delete_failed path={} err={err}",
             path.display()
@@ -2069,9 +2179,10 @@ fn check_external_change(hwnd: HWND, state: &mut AppState) -> Result<()> {
                     Some(doc_tab) => doc_tab,
                     None => return Ok(()),
                 };
-                load_file_into_doc(doc_tab, &path)?;
+                load_file_into_doc(doc_tab, &path, state.ui_settings.large_file_threshold_mb)?;
                 apply_syntax_for_doc(doc_tab, state.editor_dark);
             }
+            apply_large_file_mode_restrictions(hwnd, state, index);
             update_tab_text(state, index);
             update_title(hwnd, state);
             update_status(state);
@@ -2124,7 +2235,7 @@ fn update_status(state: &AppState) {
     let mut sel_len = 0usize;
     let mut eol = "CRLF".to_string();
     let mut encoding = "UTF-8".to_string();
-    let mut dirty = String::new();
+    let mut flags = String::new();
     if let Some(doc_tab) = state.docs.get(state.active) {
         let pos = scintilla::get_current_pos(doc_tab.editor);
         line = scintilla::line_from_position(doc_tab.editor, pos).saturating_add(1);
@@ -2133,18 +2244,28 @@ fn update_status(state: &AppState) {
             .abs_diff(scintilla::selection_start(doc_tab.editor));
         eol = eol_mode_label(scintilla::get_eol_mode(doc_tab.editor)).to_string();
         encoding = codepage_label(scintilla::get_codepage(doc_tab.editor));
-        dirty = if doc_tab.doc.is_dirty {
-            "*".to_string()
-        } else {
-            String::new()
-        };
+        if doc_tab.doc.is_dirty {
+            flags.push('*');
+        }
+        if doc_tab.doc.large_file_mode {
+            if !flags.is_empty() {
+                flags.push(' ');
+            }
+            flags.push_str("Large File Mode");
+        }
+        if doc_tab.smart_highlight_truncated {
+            if !flags.is_empty() {
+                flags.push(' ');
+            }
+            flags.push_str("Too many matches");
+        }
     }
 
     set_status_part_text(state.status, 0, &format!("Ln {line}, Col {col}"));
     set_status_part_text(state.status, 1, &format!("Sel {sel_len}"));
     set_status_part_text(state.status, 2, &format!("EOL: {eol}"));
     set_status_part_text(state.status, 3, &format!("ENC: {encoding}"));
-    set_status_part_text(state.status, 4, &dirty);
+    set_status_part_text(state.status, 4, &flags);
 }
 
 fn update_status_parts(state: &AppState) {
@@ -2156,7 +2277,7 @@ fn update_status_parts(state: &AppState) {
     let sel_width = scale_for_dpi(state.status, 90);
     let eol_width = scale_for_dpi(state.status, 90);
     let enc_width = scale_for_dpi(state.status, 110);
-    let dirty_width = scale_for_dpi(state.status, 40);
+    let dirty_width = scale_for_dpi(state.status, 220);
     let part0 = (width - sel_width - eol_width - enc_width - dirty_width).max(0);
     let part1 = (width - eol_width - enc_width - dirty_width).max(part0);
     let part2 = (width - enc_width - dirty_width).max(part1);
@@ -3145,6 +3266,29 @@ fn create_editor(parent: HWND, instance: HINSTANCE) -> Result<HWND> {
 fn apply_syntax_for_doc(doc_tab: &DocTab, dark: bool) {
     let lexer = lexer_for_doc(&doc_tab.doc);
     scintilla::apply_lexer(doc_tab.editor, lexer, dark);
+    apply_editor_theme_overlays(doc_tab.editor, dark);
+}
+
+fn apply_editor_theme_overlays(editor: HWND, dark: bool) {
+    let (smart_color, fill_alpha, outline_alpha) = if dark {
+        (color_ref(90, 140, 220).0, 52usize, 80usize)
+    } else {
+        (color_ref(104, 145, 210).0, 60usize, 95usize)
+    };
+    scintilla::configure_smart_highlight_indicator(
+        editor,
+        SMART_HL_INDIC,
+        smart_color,
+        fill_alpha,
+        outline_alpha,
+    );
+
+    let hidden_line_color = if dark {
+        color_ref(114, 160, 230).0
+    } else {
+        color_ref(120, 120, 120).0
+    };
+    scintilla::set_hidden_line_color(editor, hidden_line_color);
 }
 
 fn lexer_for_doc(doc: &Document) -> scintilla::LexerKind {
@@ -3177,7 +3321,12 @@ fn lexer_for_doc(doc: &Document) -> scintilla::LexerKind {
     }
 }
 
-fn create_doc_from_path(parent: HWND, instance: HINSTANCE, path: PathBuf) -> Result<DocTab> {
+fn create_doc_from_path(
+    parent: HWND,
+    instance: HINSTANCE,
+    path: PathBuf,
+    large_file_threshold_mb: u32,
+) -> Result<DocTab> {
     let editor = create_editor(parent, instance)?;
     let mut doc = Document::new_empty();
     doc.backup_path = session::backup_path_for_id(doc.id)?;
@@ -3189,18 +3338,24 @@ fn create_doc_from_path(parent: HWND, instance: HINSTANCE, path: PathBuf) -> Res
         word_count: Some(0),
         change_counter: 0,
         last_backup_change_counter: None,
+        smart_highlight_token: None,
+        smart_highlight_truncated: false,
     };
-    load_file_into_doc(&mut doc_tab, &path)?;
+    load_file_into_doc(&mut doc_tab, &path, large_file_threshold_mb)?;
     Ok(doc_tab)
 }
 
-fn load_file_into_doc(doc_tab: &mut DocTab, path: &PathBuf) -> Result<()> {
+fn load_file_into_doc(
+    doc_tab: &mut DocTab,
+    path: &PathBuf,
+    large_file_threshold_mb: u32,
+) -> Result<()> {
     let bytes =
         std::fs::read(path).map_err(|err| AppError::new(format!("Failed to read file: {err}")))?;
     let (text, encoding) = document::decode_bytes(&bytes)?;
     let eol = document::detect_eol(&text);
     let stamp = document::FileStamp::from_path(path)?;
-    let large_file_mode = document::is_large_file(stamp.size);
+    let large_file_mode = is_large_file_size(large_file_threshold_mb, stamp.size);
 
     scintilla::set_text(doc_tab.editor, &text)?;
     scintilla::set_eol_mode(doc_tab.editor, eol);
@@ -3243,6 +3398,8 @@ fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Re
         word_count: Some(0),
         change_counter: 0,
         last_backup_change_counter: None,
+        smart_highlight_token: None,
+        smart_highlight_truncated: false,
     };
     scintilla::set_eol_mode(editor, doc_tab.doc.eol);
     scintilla::set_wrap_enabled(editor, state.word_wrap_enabled);
@@ -3251,6 +3408,7 @@ fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Re
 
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     select_tab(hwnd, state, index);
+    apply_large_file_mode_restrictions(hwnd, state, index);
     Ok(())
 }
 
@@ -3264,12 +3422,15 @@ fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
     let editor = create_editor(hwnd, instance)?;
     scintilla::set_text(editor, &text)?;
     scintilla::set_eol_mode(editor, source.doc.eol);
-    scintilla::set_wrap_enabled(editor, source.wrap_enabled);
+    let large_file_mode =
+        is_large_file_size(state.ui_settings.large_file_threshold_mb, text.len() as u64);
+    let wrap_enabled = state.word_wrap_enabled && !large_file_mode;
+    scintilla::set_wrap_enabled(editor, wrap_enabled);
 
     let mut doc = Document::new_empty();
     doc.encoding = source.doc.encoding;
     doc.eol = source.doc.eol;
-    doc.large_file_mode = document::is_large_file(text.len() as u64);
+    doc.large_file_mode = large_file_mode;
     doc.display_name = format!("Copy of {}", tab_base_name(source));
     doc.backup_path = session::backup_path_for_id(doc.id)?;
     doc.is_dirty = true;
@@ -3278,20 +3439,23 @@ fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
         runtime_id: 0,
         editor,
         doc,
-        wrap_enabled: state.word_wrap_enabled && !source.doc.large_file_mode,
-        word_count: if source.doc.large_file_mode {
+        wrap_enabled,
+        word_count: if large_file_mode {
             None
         } else {
             Some(count_words(&text))
         },
         change_counter: 1,
         last_backup_change_counter: None,
+        smart_highlight_token: None,
+        smart_highlight_truncated: false,
     };
     let lexer = lexer_for_doc(&source.doc);
     scintilla::apply_lexer(doc_tab.editor, lexer, state.editor_dark);
 
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     select_tab(hwnd, state, index);
+    apply_large_file_mode_restrictions(hwnd, state, index);
     Ok(())
 }
 
@@ -3470,12 +3634,148 @@ fn select_tab(hwnd: HWND, state: &mut AppState, index: usize) {
             SetFocus(doc_tab.editor);
         }
     }
+    update_smart_highlight_for_doc(state, index, true);
 
     update_title(hwnd, state);
     update_status(state);
     update_wrap_menu(hwnd, state);
     update_copy_path_menu(hwnd, state);
     layout_children(hwnd, state);
+}
+
+fn select_adjacent_tab(hwnd: HWND, state: &mut AppState, next: bool) {
+    let count = state.docs.len();
+    if count <= 1 {
+        return;
+    }
+    let index = if next {
+        (state.active + 1) % count
+    } else {
+        (state.active + count - 1) % count
+    };
+    select_tab(hwnd, state, index);
+}
+
+fn hide_selected_or_current_lines(editor: HWND) {
+    let a = scintilla::selection_start(editor);
+    let b = scintilla::selection_end(editor);
+    let (start_pos, end_pos) = if a <= b { (a, b) } else { (b, a) };
+    let line_start = scintilla::line_from_position(editor, start_pos);
+    let line_end = if start_pos == end_pos {
+        line_start
+    } else {
+        scintilla::line_from_position(editor, end_pos)
+    };
+    scintilla::hide_lines(editor, line_start, line_end);
+}
+
+fn show_all_lines(editor: HWND) {
+    let lines = scintilla::line_count(editor);
+    if lines == 0 {
+        return;
+    }
+    scintilla::show_lines(editor, 0, lines - 1);
+}
+
+fn update_smart_highlight_for_doc(state: &mut AppState, index: usize, force: bool) {
+    if index >= state.docs.len() {
+        return;
+    }
+    let smart_enabled = state.ui_settings.smart_highlight_enabled;
+    let allow_large = state.ui_settings.large_file_allow_smart_highlight;
+    let match_case = state.ui_settings.smart_highlight_match_case;
+    let whole_word = state.ui_settings.smart_highlight_whole_word;
+
+    let doc_tab = &mut state.docs[index];
+    if !smart_enabled || (doc_tab.doc.large_file_mode && !allow_large) {
+        clear_smart_highlight(doc_tab);
+        return;
+    }
+
+    let token = selection_token_for_smart_highlight(doc_tab.editor, whole_word);
+    let Some(token) = token else {
+        clear_smart_highlight(doc_tab);
+        return;
+    };
+
+    if !force
+        && doc_tab
+            .smart_highlight_token
+            .as_ref()
+            .is_some_and(|existing| existing == &token)
+    {
+        return;
+    }
+
+    let doc_len = scintilla::get_length(doc_tab.editor);
+    scintilla::set_indicator_current(doc_tab.editor, SMART_HL_INDIC);
+    scintilla::clear_indicator_range(doc_tab.editor, 0, doc_len);
+
+    let mut flags = 0usize;
+    if match_case {
+        flags |= SCFIND_MATCHCASE;
+    }
+    if whole_word {
+        flags |= SCFIND_WHOLEWORD;
+    }
+
+    let mut start = 0usize;
+    let mut count = 0usize;
+    let mut truncated = false;
+    while start < doc_len {
+        let Some((match_start, match_end)) =
+            scintilla::search_in_target(doc_tab.editor, &token, flags, start, doc_len)
+        else {
+            break;
+        };
+
+        if match_end <= match_start {
+            break;
+        }
+        scintilla::fill_indicator_range(doc_tab.editor, match_start, match_end - match_start);
+        count = count.saturating_add(1);
+        if count >= SMART_HL_MAX_MATCHES {
+            truncated = true;
+            break;
+        }
+        start = match_end;
+    }
+
+    doc_tab.smart_highlight_token = Some(token);
+    doc_tab.smart_highlight_truncated = truncated;
+}
+
+fn clear_smart_highlight(doc_tab: &mut DocTab) {
+    if doc_tab.smart_highlight_token.is_none() && !doc_tab.smart_highlight_truncated {
+        return;
+    }
+    let len = scintilla::get_length(doc_tab.editor);
+    scintilla::set_indicator_current(doc_tab.editor, SMART_HL_INDIC);
+    scintilla::clear_indicator_range(doc_tab.editor, 0, len);
+    doc_tab.smart_highlight_token = None;
+    doc_tab.smart_highlight_truncated = false;
+}
+
+fn selection_token_for_smart_highlight(editor: HWND, whole_word: bool) -> Option<String> {
+    if scintilla::selection_empty(editor) {
+        return None;
+    }
+    let token = scintilla::selected_text(editor).ok()?;
+    if token.is_empty()
+        || token.len() > SMART_HL_MAX_TOKEN_LEN
+        || token.contains('\r')
+        || token.contains('\n')
+    {
+        return None;
+    }
+    if whole_word && !is_word_like_token(&token) {
+        return None;
+    }
+    Some(token)
+}
+
+fn is_word_like_token(token: &str) -> bool {
+    !token.is_empty() && token.chars().all(|ch| ch.is_alphanumeric() || ch == '_')
 }
 
 fn tab_bar_height(state: &AppState) -> i32 {
@@ -3770,7 +4070,7 @@ fn restore_session_entry(
                 .map_err(|err| AppError::new(format!("Failed to read restore path: {err}")))?;
             let (text, encoding) = document::decode_bytes(&bytes)?;
             let stamp = document::FileStamp::from_path(path)?;
-            let large = document::is_large_file(stamp.size);
+            let large = is_large_file_size(state.ui_settings.large_file_threshold_mb, stamp.size);
             (text, encoding, Some(stamp), large)
         }
         session::RestoreSource::Backup => {
@@ -3787,8 +4087,12 @@ fn restore_session_entry(
                 .and_then(|path| document::FileStamp::from_path(path).ok());
             let large = stamp
                 .as_ref()
-                .map(|value| document::is_large_file(value.size))
-                .unwrap_or_else(|| document::is_large_file(text.len() as u64));
+                .map(|value| {
+                    is_large_file_size(state.ui_settings.large_file_threshold_mb, value.size)
+                })
+                .unwrap_or_else(|| {
+                    is_large_file_size(state.ui_settings.large_file_threshold_mb, text.len() as u64)
+                });
             (text, TextEncoding::Utf8, stamp, large)
         }
         session::RestoreSource::Skip => return Ok(()),
@@ -3843,6 +4147,8 @@ fn restore_session_entry(
         } else {
             None
         },
+        smart_highlight_token: None,
+        smart_highlight_truncated: false,
     };
     if doc_tab.doc.path.is_none() {
         update_next_untitled_index_from_name(state, &doc_tab.doc.display_name);
@@ -3851,6 +4157,11 @@ fn restore_session_entry(
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     if entry.cursor_pos >= 0 {
         scintilla::goto_pos(state.docs[index].editor, entry.cursor_pos as usize);
+    }
+    if state.docs[index].doc.large_file_mode
+        && state.ui_settings.large_file_disable_word_wrap_globally
+    {
+        disable_word_wrap_globally_in_state(state);
     }
     Ok(())
 }
@@ -4083,6 +4394,11 @@ fn get_state(hwnd: HWND) -> Option<&'static mut AppState> {
     } else {
         Some(unsafe { &mut *ptr })
     }
+}
+
+fn is_large_file_size(threshold_mb: u32, size_bytes: u64) -> bool {
+    let bytes = (threshold_mb as u64).saturating_mul(1024 * 1024);
+    size_bytes >= bytes
 }
 
 fn clamp_vertical_tab_width(state: &AppState, desired: i32, client_width: i32) -> i32 {
@@ -4421,10 +4737,9 @@ fn scale_for_dpi(hwnd: HWND, value: i32) -> i32 {
 }
 
 fn persist_ui_settings(state: &AppState) {
-    let settings = UiSettings {
-        tab_placement: state.tab_host.placement,
-        vertical_tab_width_px: state.tab_host.vertical_width_px,
-    };
+    let mut settings = state.ui_settings;
+    settings.tab_placement = state.tab_host.placement;
+    settings.vertical_tab_width_px = state.tab_host.vertical_width_px;
     if let Err(err) = settings::save_settings(&settings) {
         logging::log_error(&format!("settings_save_failed err={err}"));
     }
@@ -4509,6 +4824,37 @@ fn set_word_wrap(hwnd: HWND, state: &mut AppState, enabled: bool) {
     update_wrap_menu(hwnd, state);
     if let Err(err) = save_session_checkpoint(state) {
         logging::log_error(&format!("session_save_after_wrap_toggle_failed err={err}"));
+    }
+}
+
+fn disable_word_wrap_globally_in_state(state: &mut AppState) {
+    state.word_wrap_enabled = false;
+    for doc_tab in &mut state.docs {
+        doc_tab.wrap_enabled = false;
+        scintilla::set_wrap_enabled(doc_tab.editor, false);
+    }
+}
+
+fn apply_large_file_mode_restrictions(hwnd: HWND, state: &mut AppState, index: usize) {
+    let Some(doc_tab) = state.docs.get_mut(index) else {
+        return;
+    };
+    if !doc_tab.doc.large_file_mode {
+        return;
+    }
+
+    if !state.ui_settings.large_file_allow_smart_highlight {
+        clear_smart_highlight(doc_tab);
+    }
+
+    if state.ui_settings.large_file_disable_word_wrap_globally && state.word_wrap_enabled {
+        disable_word_wrap_globally_in_state(state);
+        update_wrap_menu(hwnd, state);
+        if let Err(err) = save_session_checkpoint(state) {
+            logging::log_error(&format!(
+                "session_save_after_large_file_wrap_disable_failed err={err}"
+            ));
+        }
     }
 }
 
@@ -5735,5 +6081,21 @@ mod tests {
 
         doc.large_file_mode = true;
         assert_eq!(lexer_for_doc(&doc), scintilla::LexerKind::Null);
+    }
+
+    #[test]
+    fn large_file_size_uses_threshold_mb() {
+        assert!(is_large_file_size(1, 1_048_576));
+        assert!(!is_large_file_size(1, 1_048_575));
+        assert!(is_large_file_size(20, 20 * 1_048_576));
+    }
+
+    #[test]
+    fn word_like_token_rules() {
+        assert!(is_word_like_token("alpha"));
+        assert!(is_word_like_token("alpha_12"));
+        assert!(!is_word_like_token("alpha-beta"));
+        assert!(!is_word_like_token("alpha beta"));
+        assert!(!is_word_like_token(""));
     }
 }

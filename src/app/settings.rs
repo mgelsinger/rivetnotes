@@ -10,6 +10,14 @@ pub const SETTINGS_FILE_NAME: &str = "settings.json";
 pub const MIN_VERTICAL_TAB_WIDTH_PX: i32 = 80;
 pub const MAX_VERTICAL_TAB_WIDTH_PX: i32 = 600;
 pub const DEFAULT_VERTICAL_TAB_WIDTH_PX: i32 = 180;
+pub const DEFAULT_SMART_HIGHLIGHT_ENABLED: bool = true;
+pub const DEFAULT_SMART_HIGHLIGHT_MATCH_CASE: bool = false;
+pub const DEFAULT_SMART_HIGHLIGHT_WHOLE_WORD: bool = true;
+pub const DEFAULT_LARGE_FILE_THRESHOLD_MB: u32 = 20;
+pub const MIN_LARGE_FILE_THRESHOLD_MB: u32 = 1;
+pub const MAX_LARGE_FILE_THRESHOLD_MB: u32 = 1024;
+pub const DEFAULT_LARGE_FILE_DISABLE_WORD_WRAP_GLOBALLY: bool = false;
+pub const DEFAULT_LARGE_FILE_ALLOW_SMART_HIGHLIGHT: bool = false;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -36,6 +44,18 @@ pub struct UiSettings {
     pub tab_placement: TabPlacement,
     #[serde(default = "default_vertical_tab_width_px")]
     pub vertical_tab_width_px: i32,
+    #[serde(default = "default_smart_highlight_enabled")]
+    pub smart_highlight_enabled: bool,
+    #[serde(default = "default_smart_highlight_match_case")]
+    pub smart_highlight_match_case: bool,
+    #[serde(default = "default_smart_highlight_whole_word")]
+    pub smart_highlight_whole_word: bool,
+    #[serde(default = "default_large_file_threshold_mb")]
+    pub large_file_threshold_mb: u32,
+    #[serde(default = "default_large_file_disable_word_wrap_globally")]
+    pub large_file_disable_word_wrap_globally: bool,
+    #[serde(default = "default_large_file_allow_smart_highlight")]
+    pub large_file_allow_smart_highlight: bool,
 }
 
 impl Default for UiSettings {
@@ -43,6 +63,12 @@ impl Default for UiSettings {
         Self {
             tab_placement: TabPlacement::Top,
             vertical_tab_width_px: DEFAULT_VERTICAL_TAB_WIDTH_PX,
+            smart_highlight_enabled: DEFAULT_SMART_HIGHLIGHT_ENABLED,
+            smart_highlight_match_case: DEFAULT_SMART_HIGHLIGHT_MATCH_CASE,
+            smart_highlight_whole_word: DEFAULT_SMART_HIGHLIGHT_WHOLE_WORD,
+            large_file_threshold_mb: DEFAULT_LARGE_FILE_THRESHOLD_MB,
+            large_file_disable_word_wrap_globally: DEFAULT_LARGE_FILE_DISABLE_WORD_WRAP_GLOBALLY,
+            large_file_allow_smart_highlight: DEFAULT_LARGE_FILE_ALLOW_SMART_HIGHLIGHT,
         }
     }
 }
@@ -52,6 +78,9 @@ impl UiSettings {
         self.vertical_tab_width_px = self
             .vertical_tab_width_px
             .clamp(MIN_VERTICAL_TAB_WIDTH_PX, MAX_VERTICAL_TAB_WIDTH_PX);
+        self.large_file_threshold_mb = self
+            .large_file_threshold_mb
+            .clamp(MIN_LARGE_FILE_THRESHOLD_MB, MAX_LARGE_FILE_THRESHOLD_MB);
         self
     }
 }
@@ -88,6 +117,30 @@ fn ensure_settings_dir() -> Result<()> {
 
 fn default_vertical_tab_width_px() -> i32 {
     DEFAULT_VERTICAL_TAB_WIDTH_PX
+}
+
+fn default_smart_highlight_enabled() -> bool {
+    DEFAULT_SMART_HIGHLIGHT_ENABLED
+}
+
+fn default_smart_highlight_match_case() -> bool {
+    DEFAULT_SMART_HIGHLIGHT_MATCH_CASE
+}
+
+fn default_smart_highlight_whole_word() -> bool {
+    DEFAULT_SMART_HIGHLIGHT_WHOLE_WORD
+}
+
+fn default_large_file_threshold_mb() -> u32 {
+    DEFAULT_LARGE_FILE_THRESHOLD_MB
+}
+
+fn default_large_file_disable_word_wrap_globally() -> bool {
+    DEFAULT_LARGE_FILE_DISABLE_WORD_WRAP_GLOBALLY
+}
+
+fn default_large_file_allow_smart_highlight() -> bool {
+    DEFAULT_LARGE_FILE_ALLOW_SMART_HIGHLIGHT
 }
 
 #[cfg(test)]
@@ -145,6 +198,7 @@ mod tests {
         let settings = UiSettings {
             tab_placement: TabPlacement::Top,
             vertical_tab_width_px: 1000,
+            ..UiSettings::default()
         };
         assert_eq!(
             settings.normalized().vertical_tab_width_px,
@@ -173,10 +227,18 @@ mod tests {
         let settings = UiSettings {
             tab_placement: TabPlacement::Right,
             vertical_tab_width_px: 320,
+            smart_highlight_enabled: false,
+            smart_highlight_match_case: true,
+            smart_highlight_whole_word: false,
+            large_file_threshold_mb: 50,
+            large_file_disable_word_wrap_globally: true,
+            large_file_allow_smart_highlight: true,
         };
         let json = serde_json::to_string_pretty(&settings).unwrap();
         assert!(json.contains("\"tab_placement\": \"right\""));
         assert!(json.contains("\"vertical_tab_width_px\": 320"));
+        assert!(json.contains("\"smart_highlight_enabled\": false"));
+        assert!(json.contains("\"large_file_threshold_mb\": 50"));
 
         let parsed: UiSettings = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, settings);
@@ -196,6 +258,7 @@ mod tests {
             let settings = UiSettings {
                 tab_placement: TabPlacement::Left,
                 vertical_tab_width_px: 240,
+                ..UiSettings::default()
             };
             save_settings(&settings).unwrap();
             let loaded = load_settings().unwrap();
@@ -212,13 +275,15 @@ mod tests {
                 &path,
                 r#"{
   "tab_placement": "left",
-  "vertical_tab_width_px": 9999
+  "vertical_tab_width_px": 9999,
+  "large_file_threshold_mb": 0
 }"#,
             )
             .unwrap();
             let loaded = load_settings().unwrap();
             assert_eq!(loaded.tab_placement, TabPlacement::Left);
             assert_eq!(loaded.vertical_tab_width_px, MAX_VERTICAL_TAB_WIDTH_PX);
+            assert_eq!(loaded.large_file_threshold_mb, MIN_LARGE_FILE_THRESHOLD_MB);
         });
     }
 }
