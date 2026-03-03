@@ -7,6 +7,28 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 - TBD.
 
+## [0.4.0] - 2026-03-03
+
+- Introduced a `TabStripHost` architecture that supports three tab placements:
+  `Top`, `Left`, and `Right`, while keeping document logic unchanged.
+- Added persisted UI settings in `%LOCALAPPDATA%\Rivet\settings.json`:
+  `tab_placement` (`top|left|right`) and `vertical_tab_width_px`.
+- Replaced vertical `ListBox` tabs with a custom-drawn `ListView`-based vertical
+  tab panel to avoid unsupported Win32 `TCS_VERTICAL` behavior under ComCtl32 v6.
+- Implemented vertical tab theming via `NM_CUSTOMDRAW` with explicit light/dark
+  palette colors for background, selection, hover, and text.
+- Added/updated `View -> Tabs -> Top|Left|Right` menu controls with checked
+  radio-style behavior and persistent placement updates.
+- Kept `Ctrl+Alt+T` placement cycling and wired it through the new placement model.
+- Implemented splitter drag resize with capture-based behavior and persisted width.
+- Switched child-window layout positioning to `SetWindowPos` for tabs, splitter,
+  status bar, and editor windows.
+- Added placement-agnostic tab context hit testing for both top `TabCtrl` and
+  vertical `ListView` tabs.
+- Standardized dirty tab label rendering in both tab modes with a trailing `*`.
+- Added targeted settings tests for serialization shape, defaults, roundtrip,
+  and width clamping.
+
 ## [0.3.1] - 2026-03-02
 
 - Added `Edit -> Go To Line...` with `Ctrl+G` and Scintilla `SCI_GOTOLINE` navigation,

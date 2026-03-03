@@ -9,10 +9,7 @@ use windows::Win32::Foundation::{
     BOOL, COLORREF, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT,
     POINT, WPARAM,
 };
-use windows::Win32::Graphics::Gdi::{
-    CreateSolidBrush, DeleteObject, HBRUSH, HDC, InvalidateRect, ScreenToClient, SetBkColor,
-    SetTextColor,
-};
+use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DeleteObject, HBRUSH, InvalidateRect, ScreenToClient};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::Dialogs::{
@@ -20,10 +17,18 @@ use windows::Win32::UI::Controls::Dialogs::{
     OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 use windows::Win32::UI::Controls::{
-    ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, NM_RCLICK, NMHDR, SB_SETPARTS,
-    SB_SETTEXTW, STATUSCLASSNAMEW, TCHITTESTINFO, TCIF_TEXT, TCITEMW, TCM_DELETEITEM,
-    TCM_GETCURSEL, TCM_GETITEMRECT, TCM_HITTEST, TCM_INSERTITEMW, TCM_SETCURSEL, TCM_SETITEMW,
-    TCN_SELCHANGE, WC_TABCONTROLW,
+    CDDS_ITEMPREPAINT, CDDS_PREPAINT, CDIS_HOT, CDIS_SELECTED, CDRF_DODEFAULT, CDRF_NEWFONT,
+    CDRF_NOTIFYITEMDRAW, ICC_LISTVIEW_CLASSES, ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX,
+    InitCommonControlsEx, LIST_VIEW_ITEM_STATE_FLAGS, LVCF_WIDTH, LVCOLUMNW, LVHITTESTINFO,
+    LVIF_PARAM, LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVN_ITEMCHANGED,
+    LVM_DELETEALLITEMS, LVM_HITTEST, LVM_INSERTCOLUMNW, LVM_INSERTITEMW, LVM_SETCOLUMNWIDTH,
+    LVM_SETBKCOLOR, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMSTATE, LVM_SETTEXTBKCOLOR,
+    LVM_SETTEXTCOLOR, LVS_EX_DOUBLEBUFFER,
+    LVS_EX_FULLROWSELECT, LVS_NOCOLUMNHEADER, LVS_REPORT, LVS_SHOWSELALWAYS, LVS_SINGLESEL,
+    NMLISTVIEW, NMLVCUSTOMDRAW, NMHDR, NM_CUSTOMDRAW, NM_RCLICK, SB_SETPARTS, SB_SETTEXTW,
+    STATUSCLASSNAMEW, TCHITTESTINFO, TCIF_TEXT, TCITEMW, TCM_DELETEITEM, TCM_GETCURSEL,
+    TCM_GETITEMRECT, TCM_HITTEST, TCM_INSERTITEMW, TCM_SETCURSEL, TCM_SETITEMW, TCN_SELCHANGE,
+    WC_LISTVIEWW, WC_TABCONTROLW,
 };
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, SetProcessDpiAwarenessContext,
@@ -39,19 +44,21 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable, DestroyMenu,
     DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL, ES_NUMBER, EnableMenuItem, FALT, FCONTROL,
     FSHIFT, FVIRTKEY, GCLP_HICON, GCLP_HICONSM, GWLP_USERDATA, GetClientRect, GetCursorPos,
-    GetMenu, GetMessageW, GetParent, GetSystemMetrics, GetWindowLongPtrW, GetWindowTextLengthW,
+    GetMenu, GetMessageW, GetParent, GetSystemMetrics, GetWindowLongPtrW,
+    GetWindowTextLengthW,
     GetWindowTextW, HACCEL, HICON, HMENU, HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL,
     ICON_SMALL2, IDC_ARROW, IDC_SIZEWE, IDI_APPLICATION, IDNO, IDYES, IMAGE_ICON, KillTimer,
-    LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, LBN_DBLCLK, LBN_SELCHANGE,
+    LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LBN_DBLCLK,
     LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW,
     LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL,
     MF_BYCOMMAND, MF_CHECKED, MF_ENABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING,
     MF_UNCHECKED, MSG, MessageBoxW, PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON,
     SM_CYICON, SM_CYSMICON, SW_HIDE, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER,
     SYSTEM_METRICS_INDEX, SendMessageW, SetClassLongPtrW, SetCursor, SetTimer, SetWindowLongPtrW,
     SetWindowPos, SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
     TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WM_ACTIVATEAPP,
-    WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLORLISTBOX, WM_DESTROY, WM_DROPFILES,
+    WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_DESTROY, WM_DROPFILES,
     WM_GETICON, WM_INITMENUPOPUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE,
     WM_NCDESTROY, WM_NOTIFY, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_BORDER,
     WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
@@ -61,6 +68,7 @@ use windows::core::PWSTR;
 use windows::core::{HSTRING, PCWSTR, w};
 
 use crate::app::document::{self, Document, Eol, TextEncoding};
+use crate::app::settings::{self, TabPlacement, UiSettings};
 use crate::app::session;
 use crate::commands::copy_full_path::{
     CopyPathKind, can_copy_directory_path, can_copy_filename, can_copy_full_path,
@@ -201,6 +209,7 @@ unsafe extern "system" {
 }
 
 struct DocTab {
+    runtime_id: isize,
     editor: HWND,
     doc: Document,
     wrap_enabled: bool,
@@ -269,37 +278,42 @@ struct FindInFilesState {
     hits: Vec<FindHit>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum TabLayout {
-    HorizontalTop,
-    VerticalLeft,
-    VerticalRight,
+#[derive(Copy, Clone)]
+struct TabTheme {
+    bg: COLORREF,
+    fg: COLORREF,
+    selection_bg: COLORREF,
+    selection_fg: COLORREF,
+    hover_bg: COLORREF,
+    border: COLORREF,
 }
 
-impl TabLayout {
-    fn next(self) -> Self {
-        match self {
-            TabLayout::HorizontalTop => TabLayout::VerticalLeft,
-            TabLayout::VerticalLeft => TabLayout::VerticalRight,
-            TabLayout::VerticalRight => TabLayout::HorizontalTop,
-        }
+struct TabStripHost {
+    top_tabs: HWND,
+    vertical_tabs: HWND,
+    splitter: HWND,
+    vertical_tabs_brush: HBRUSH,
+    theme: TabTheme,
+    placement: TabPlacement,
+    vertical_width_px: i32,
+    resizing: bool,
+    drag_start_x_screen: i32,
+    drag_start_width: i32,
+}
+
+impl TabStripHost {
+    fn is_vertical(&self) -> bool {
+        self.placement != TabPlacement::Top
     }
 }
 
 struct AppState {
-    tabs: HWND,
-    tab_list: HWND,
-    tab_splitter: HWND,
-    tab_list_brush: HBRUSH,
-    tab_list_text: COLORREF,
-    tab_list_back: COLORREF,
+    tab_host: TabStripHost,
     status: HWND,
     docs: Vec<DocTab>,
     active: usize,
     editor_dark: bool,
-    tab_layout: TabLayout,
-    tab_list_width: i32,
-    resizing_tabs: bool,
+    next_tab_runtime_id: i64,
     always_on_top: bool,
     icon_big: HICON,
     icon_small: HICON,
@@ -328,7 +342,7 @@ pub fn run() -> Result<()> {
     unsafe {
         InitCommonControlsEx(&INITCOMMONCONTROLSEX {
             dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
-            dwICC: ICC_WIN95_CLASSES,
+            dwICC: ICC_WIN95_CLASSES | ICC_LISTVIEW_CLASSES,
         })
         .ok()?;
     }
@@ -596,6 +610,32 @@ fn create_menu() -> Result<HMENU> {
         AppendMenuW(menu, MF_POPUP, edit_menu.0 as usize, w!("Edit"))?;
 
         let view_menu = CreatePopupMenu()?;
+        let tabs_menu = CreatePopupMenu()?;
+        AppendMenuW(
+            tabs_menu,
+            MF_STRING,
+            IDM_VIEW_TABS_HORIZONTAL as usize,
+            w!("Top"),
+        )?;
+        AppendMenuW(
+            tabs_menu,
+            MF_STRING,
+            IDM_VIEW_TABS_VERTICAL_LEFT as usize,
+            w!("Left"),
+        )?;
+        AppendMenuW(
+            tabs_menu,
+            MF_STRING,
+            IDM_VIEW_TABS_VERTICAL_RIGHT as usize,
+            w!("Right"),
+        )?;
+        AppendMenuW(
+            view_menu,
+            MF_POPUP,
+            tabs_menu.0 as usize,
+            w!("Tabs"),
+        )?;
+        AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(
             view_menu,
             MF_STRING,
@@ -859,9 +899,11 @@ fn message_loop(hwnd: HWND, accel: HACCEL) -> Result<()> {
         }
         if message.message == WM_MBUTTONUP
             && let Some(state) = get_state(hwnd)
-            && message.hwnd == state.tabs
+            && state.tab_host.placement == TabPlacement::Top
+            && message.hwnd == state.tab_host.top_tabs
         {
-            if let Some(index) = tab_index_at_point(state.tabs, state.docs.len(), message.lParam)
+            if let Some(index) =
+                tab_index_at_point(state.tab_host.top_tabs, state.docs.len(), message.lParam)
                 && let Err(err) = close_tab(hwnd, state, index)
             {
                 show_error("Rivet error", &err.to_string());
@@ -925,39 +967,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_MOUSEMOVE => {
-            if let Some(state) = get_state(hwnd)
-                && state.resizing_tabs
-            {
-                let x = lparam_x(lparam);
-                let mut rect = windows::Win32::Foundation::RECT::default();
-                unsafe {
-                    let _ = GetClientRect(hwnd, &mut rect);
-                }
-                let width = rect.right - rect.left;
-                let desired = match state.tab_layout {
-                    TabLayout::VerticalLeft => x,
-                    TabLayout::VerticalRight => width - x - TAB_SPLITTER_WIDTH,
-                    TabLayout::HorizontalTop => state.tab_list_width,
-                };
-                if state.tab_layout != TabLayout::HorizontalTop {
-                    state.tab_list_width = clamp_tab_list_width(state, desired, width);
-                    layout_children(hwnd, state);
-                }
-                return LRESULT(0);
-            }
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
-        WM_LBUTTONUP => {
-            if let Some(state) = get_state(hwnd)
-                && state.resizing_tabs
-            {
-                state.resizing_tabs = false;
-                unsafe {
-                    let _ = ReleaseCapture();
-                }
-            }
-            LRESULT(0)
-        }
+        WM_LBUTTONUP => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
         WM_CONTEXTMENU => {
             let source = HWND(wparam.0 as isize);
             if let Some(state) = get_state(hwnd)
@@ -981,20 +993,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_COMMAND => {
             let command_id = (wparam.0 & 0xffff) as u16;
-            if lparam.0 != 0 {
-                let notify = hiword(wparam.0);
-                if command_id as usize == IDC_TAB_LIST && notify == LBN_SELCHANGE as u16 {
-                    if let Some(state) = get_state(hwnd) {
-                        let index = unsafe {
-                            SendMessageW(state.tab_list, LB_GETCURSEL, WPARAM(0), LPARAM(0)).0
-                        };
-                        if index >= 0 {
-                            select_tab(hwnd, state, index as usize);
-                        }
-                    }
-                    return LRESULT(0);
-                }
-            }
             match command_id {
                 IDM_FILE_OPEN => {
                     if let Some(state) = get_state(hwnd)
@@ -1232,25 +1230,25 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
                 IDM_VIEW_TABS_HORIZONTAL => {
                     if let Some(state) = get_state(hwnd) {
-                        set_tab_layout(hwnd, state, TabLayout::HorizontalTop);
+                        set_tab_layout(hwnd, state, TabPlacement::Top);
                     }
                     LRESULT(0)
                 }
                 IDM_VIEW_TABS_VERTICAL_LEFT => {
                     if let Some(state) = get_state(hwnd) {
-                        set_tab_layout(hwnd, state, TabLayout::VerticalLeft);
+                        set_tab_layout(hwnd, state, TabPlacement::Left);
                     }
                     LRESULT(0)
                 }
                 IDM_VIEW_TABS_VERTICAL_RIGHT => {
                     if let Some(state) = get_state(hwnd) {
-                        set_tab_layout(hwnd, state, TabLayout::VerticalRight);
+                        set_tab_layout(hwnd, state, TabPlacement::Right);
                     }
                     LRESULT(0)
                 }
                 IDM_VIEW_TABS_CYCLE => {
                     if let Some(state) = get_state(hwnd) {
-                        let next = state.tab_layout.next();
+                        let next = state.tab_host.placement.next();
                         set_tab_layout(hwnd, state, next);
                     }
                     LRESULT(0)
@@ -1378,53 +1376,69 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
             }
         }
-        WM_CTLCOLORLISTBOX => {
-            if let Some(state) = get_state(hwnd) {
-                let target = HWND(lparam.0);
-                if target == state.tab_list {
-                    let hdc = HDC(wparam.0 as isize);
-                    unsafe {
-                        SetTextColor(hdc, state.tab_list_text);
-                        SetBkColor(hdc, state.tab_list_back);
-                    }
-                    return LRESULT(state.tab_list_brush.0);
-                }
-            }
-            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
-        }
         WM_NOTIFY => {
             let nmhdr = unsafe { &*(lparam.0 as *const NMHDR) };
             if nmhdr.hwndFrom != HWND(0) {
-                if let Some(state) = get_state(hwnd)
-                    && nmhdr.hwndFrom == state.tabs
-                    && nmhdr.code == NM_RCLICK
-                {
-                    if let Some((index, x, y)) = tab_hit_test_at_cursor(state.tabs) {
-                        select_tab(hwnd, state, index);
-                        if let Some(command_id) = show_tab_context_menu(hwnd, state, index, x, y) {
-                            unsafe {
-                                SendMessageW(
-                                    hwnd,
-                                    WM_COMMAND,
-                                    WPARAM(command_id as usize),
-                                    LPARAM(0),
-                                );
+                if let Some(state) = get_state(hwnd) {
+                    if nmhdr.code == NM_RCLICK
+                        && (nmhdr.hwndFrom == state.tab_host.top_tabs
+                            || nmhdr.hwndFrom == state.tab_host.vertical_tabs)
+                    {
+                        if let Some((index, x, y)) = tab_hit_test_at_cursor(state) {
+                            select_tab(hwnd, state, index);
+                            if let Some(command_id) = show_tab_context_menu(hwnd, state, index, x, y)
+                            {
+                                unsafe {
+                                    SendMessageW(
+                                        hwnd,
+                                        WM_COMMAND,
+                                        WPARAM(command_id as usize),
+                                        LPARAM(0),
+                                    );
+                                }
                             }
                         }
+                        return LRESULT(0);
                     }
-                    return LRESULT(0);
-                }
 
-                if nmhdr.code == TCN_SELCHANGE {
-                    if let Some(state) = get_state(hwnd) {
+                    if nmhdr.hwndFrom == state.tab_host.top_tabs && nmhdr.code == TCN_SELCHANGE {
                         let index = unsafe {
-                            SendMessageW(state.tabs, TCM_GETCURSEL, WPARAM(0), LPARAM(0)).0
+                            SendMessageW(
+                                state.tab_host.top_tabs,
+                                TCM_GETCURSEL,
+                                WPARAM(0),
+                                LPARAM(0),
+                            )
+                            .0
                         } as i32;
                         if index >= 0 {
                             select_tab(hwnd, state, index as usize);
                         }
+                        return LRESULT(0);
                     }
-                    return LRESULT(0);
+
+                    if nmhdr.hwndFrom == state.tab_host.vertical_tabs
+                        && nmhdr.code == LVN_ITEMCHANGED
+                    {
+                        let info = unsafe { &*(lparam.0 as *const NMLISTVIEW) };
+                        let became_selected = (info.uNewState & LVIS_SELECTED.0) != 0
+                            && (info.uOldState & LVIS_SELECTED.0) == 0;
+                        if became_selected && info.iItem >= 0 {
+                            let target = doc_index_by_runtime_id(state, info.lParam)
+                                .or_else(|| Some(info.iItem as usize));
+                            if let Some(index) = target
+                                && index < state.docs.len()
+                                && index != state.active
+                            {
+                                select_tab(hwnd, state, index);
+                            }
+                        }
+                        return LRESULT(0);
+                    }
+
+                    if nmhdr.hwndFrom == state.tab_host.vertical_tabs && nmhdr.code == NM_CUSTOMDRAW {
+                        return handle_vertical_tab_custom_draw(state, lparam);
+                    }
                 }
 
                 if nmhdr.code == SCN_SAVEPOINTLEFT || nmhdr.code == SCN_SAVEPOINTREACHED {
@@ -1529,7 +1543,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let state_ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut AppState };
             if !state_ptr.is_null() {
                 unsafe {
-                    destroy_tab_list_brush(&mut *state_ptr);
+                    destroy_tab_host_brush(&mut *state_ptr);
                     drop(Box::from_raw(state_ptr));
                     SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 }
@@ -1541,8 +1555,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 }
 
 fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
+    let ui_settings = match settings::load_settings() {
+        Ok(value) => value,
+        Err(err) => {
+            logging::log_error(&format!("settings_load_failed err={err}"));
+            UiSettings::default()
+        }
+    };
+
     let (icon_big, icon_small) = load_main_icons(instance);
-    let tabs = unsafe {
+    let top_tabs = unsafe {
         CreateWindowExW(
             Default::default(),
             WC_TABCONTROLW,
@@ -1558,22 +1580,24 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
             None,
         )
     };
-    if tabs.0 == 0 {
+    if top_tabs.0 == 0 {
         return Err(AppError::win32("CreateWindowExW(TabControl)"));
     }
 
-    let tab_list = unsafe {
+    let vertical_tabs = unsafe {
         CreateWindowExW(
             Default::default(),
-            w!("LISTBOX"),
+            WC_LISTVIEWW,
             PCWSTR::null(),
             window_style(
                 WS_CHILD.0
                     | WS_BORDER.0
-                    | WS_VSCROLL.0
                     | WS_TABSTOP.0
-                    | LBS_NOTIFY as u32
-                    | LBS_NOINTEGRALHEIGHT as u32,
+                    | WS_CLIPSIBLINGS.0
+                    | LVS_REPORT as u32
+                    | LVS_SINGLESEL as u32
+                    | LVS_NOCOLUMNHEADER as u32
+                    | LVS_SHOWSELALWAYS as u32,
             ),
             0,
             0,
@@ -1585,11 +1609,34 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
             None,
         )
     };
-    if tab_list.0 == 0 {
-        return Err(AppError::win32("CreateWindowExW(TabList)"));
+    if vertical_tabs.0 == 0 {
+        return Err(AppError::win32("CreateWindowExW(VerticalTabs)"));
     }
 
-    let tab_splitter = unsafe {
+    unsafe {
+        SendMessageW(
+            vertical_tabs,
+            LVM_SETEXTENDEDLISTVIEWSTYLE,
+            WPARAM((LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER) as usize),
+            LPARAM((LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER) as isize),
+        );
+    }
+
+    let mut column = LVCOLUMNW {
+        mask: LVCF_WIDTH,
+        cx: ui_settings.vertical_tab_width_px,
+        ..Default::default()
+    };
+    unsafe {
+        SendMessageW(
+            vertical_tabs,
+            LVM_INSERTCOLUMNW,
+            WPARAM(0),
+            LPARAM(&mut column as *mut LVCOLUMNW as isize),
+        );
+    }
+
+    let splitter = unsafe {
         CreateWindowExW(
             Default::default(),
             SPLITTER_CLASS,
@@ -1605,7 +1652,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
             None,
         )
     };
-    if tab_splitter.0 == 0 {
+    if splitter.0 == 0 {
         return Err(AppError::win32("CreateWindowExW(TabSplitter)"));
     }
 
@@ -1629,26 +1676,30 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         return Err(AppError::win32("CreateWindowExW(StatusBar)"));
     }
 
-    let (tab_list_text, tab_list_back) = tab_list_colors(true);
-    let tab_list_brush = unsafe { CreateSolidBrush(tab_list_back) };
-    if tab_list_brush.0 == 0 {
-        return Err(AppError::win32("CreateSolidBrush(TabList)"));
+    let theme = tab_theme(true);
+    let vertical_tabs_brush = unsafe { CreateSolidBrush(theme.bg) };
+    if vertical_tabs_brush.0 == 0 {
+        return Err(AppError::win32("CreateSolidBrush(VerticalTabs)"));
     }
 
     let state = AppState {
-        tabs,
-        tab_list,
-        tab_splitter,
-        tab_list_brush,
-        tab_list_text,
-        tab_list_back,
+        tab_host: TabStripHost {
+            top_tabs,
+            vertical_tabs,
+            splitter,
+            vertical_tabs_brush,
+            theme,
+            placement: ui_settings.tab_placement,
+            vertical_width_px: ui_settings.vertical_tab_width_px,
+            resizing: false,
+            drag_start_x_screen: 0,
+            drag_start_width: 0,
+        },
         status,
         docs: Vec::new(),
         active: 0,
         editor_dark: true,
-        tab_layout: TabLayout::HorizontalTop,
-        tab_list_width: scale_for_dpi(hwnd, 200),
-        resizing_tabs: false,
+        next_tab_runtime_id: 1,
         always_on_top: session::DEFAULT_ALWAYS_ON_TOP,
         icon_big,
         icon_small,
@@ -1674,18 +1725,22 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     };
 
     let mut state = restore_session(hwnd, state)?;
+    let editor_dark = state.editor_dark;
+    if let Err(err) = update_tab_host_theme(&mut state, editor_dark) {
+        logging::log_error(&format!("tab_host_theme_init_failed err={err}"));
+    }
     if state.docs.is_empty() {
         create_empty_tab(hwnd, instance, &mut state)?;
     }
 
-    let show_vertical = if state.tab_layout == TabLayout::HorizontalTop {
+    let show_vertical = if state.tab_host.placement == TabPlacement::Top {
         SW_HIDE
     } else {
         SW_SHOW
     };
     unsafe {
-        ShowWindow(state.tab_list, show_vertical);
-        ShowWindow(state.tab_splitter, show_vertical);
+        ShowWindow(state.tab_host.vertical_tabs, show_vertical);
+        ShowWindow(state.tab_host.splitter, show_vertical);
     }
 
     let active = state.active.min(state.docs.len().saturating_sub(1));
@@ -1693,7 +1748,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     layout_children(hwnd, &mut state);
     apply_always_on_top(hwnd, state.always_on_top);
     update_status(&state);
-    update_tab_layout_menu(hwnd, state.tab_layout);
+    update_tab_layout_menu(hwnd, state.tab_host.placement);
     update_wrap_menu(hwnd, &state);
     update_editor_dark_menu(hwnd, state.editor_dark);
     update_always_on_top_menu(hwnd, &state);
@@ -1726,29 +1781,29 @@ fn layout_children(hwnd: HWND, state: &mut AppState) {
     let width = rect.right - rect.left;
     let height = rect.bottom - rect.top;
     let status_height = status_rect.bottom - status_rect.top;
-    let tab_height = match state.tab_layout {
-        TabLayout::HorizontalTop => tab_bar_height(state).max(0),
-        TabLayout::VerticalLeft | TabLayout::VerticalRight => 0,
+    let tab_height = match state.tab_host.placement {
+        TabPlacement::Top => tab_bar_height(state).max(0),
+        TabPlacement::Left | TabPlacement::Right => 0,
     };
-    let list_width = match state.tab_layout {
-        TabLayout::HorizontalTop => 0,
-        TabLayout::VerticalLeft | TabLayout::VerticalRight => {
-            let adjusted = clamp_tab_list_width(state, state.tab_list_width, width);
-            state.tab_list_width = adjusted;
+    let list_width = match state.tab_host.placement {
+        TabPlacement::Top => 0,
+        TabPlacement::Left | TabPlacement::Right => {
+            let adjusted = clamp_vertical_tab_width(state, state.tab_host.vertical_width_px, width);
+            state.tab_host.vertical_width_px = adjusted;
             adjusted
         }
     };
     let editor_height = (height - status_height - tab_height).max(0);
-    let editor_width = match state.tab_layout {
-        TabLayout::HorizontalTop => width.max(0),
-        TabLayout::VerticalLeft | TabLayout::VerticalRight => {
+    let editor_width = match state.tab_host.placement {
+        TabPlacement::Top => width.max(0),
+        TabPlacement::Left | TabPlacement::Right => {
             (width - list_width - TAB_SPLITTER_WIDTH).max(0)
         }
     };
-    let (list_left, splitter_left, editor_left) = match state.tab_layout {
-        TabLayout::HorizontalTop => (0, 0, 0),
-        TabLayout::VerticalLeft => (0, list_width, list_width + TAB_SPLITTER_WIDTH),
-        TabLayout::VerticalRight => {
+    let (list_left, splitter_left, editor_left) = match state.tab_host.placement {
+        TabPlacement::Top => (0, 0, 0),
+        TabPlacement::Left => (0, list_width, list_width + TAB_SPLITTER_WIDTH),
+        TabPlacement::Right => {
             let editor_left = 0;
             let splitter_left = editor_width;
             let list_left = editor_width + TAB_SPLITTER_WIDTH;
@@ -1757,45 +1812,67 @@ fn layout_children(hwnd: HWND, state: &mut AppState) {
     };
 
     unsafe {
-        let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
-            state.tabs, 0, 0, width, tab_height, true,
+        let _ = SetWindowPos(
+            state.tab_host.top_tabs,
+            HWND(0),
+            0,
+            0,
+            width,
+            tab_height,
+            SWP_NOZORDER | SWP_NOACTIVATE,
         );
-        let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
-            state.tab_list,
+        let _ = SetWindowPos(
+            state.tab_host.vertical_tabs,
+            HWND(0),
             list_left,
             0,
             list_width,
             height - status_height,
-            true,
+            SWP_NOZORDER | SWP_NOACTIVATE,
         );
-        let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
-            state.tab_splitter,
+        let _ = SetWindowPos(
+            state.tab_host.splitter,
+            HWND(0),
             splitter_left,
             0,
             TAB_SPLITTER_WIDTH,
             height - status_height,
-            true,
+            SWP_NOZORDER | SWP_NOACTIVATE,
         );
-        let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
+        let _ = SetWindowPos(
             state.status,
+            HWND(0),
             0,
             height - status_height,
             width,
             status_height,
-            true,
+            SWP_NOZORDER | SWP_NOACTIVATE,
         );
+        set_vertical_tab_column_width(state.tab_host.vertical_tabs, list_width);
         for doc in &state.docs {
-            let _ = windows::Win32::UI::WindowsAndMessaging::MoveWindow(
+            let _ = SetWindowPos(
                 doc.editor,
+                HWND(0),
                 editor_left,
                 tab_height,
                 editor_width,
                 editor_height,
-                true,
+                SWP_NOZORDER | SWP_NOACTIVATE,
             );
         }
     }
     update_status_parts(state);
+}
+
+fn set_vertical_tab_column_width(vertical_tabs: HWND, width: i32) {
+    unsafe {
+        SendMessageW(
+            vertical_tabs,
+            LVM_SETCOLUMNWIDTH,
+            WPARAM(0),
+            LPARAM(width as isize),
+        );
+    }
 }
 
 fn open_from_dialog(hwnd: HWND, state: &mut AppState) -> Result<()> {
@@ -3112,6 +3189,7 @@ fn create_doc_from_path(parent: HWND, instance: HINSTANCE, path: PathBuf) -> Res
     let mut doc = Document::new_empty();
     doc.backup_path = session::backup_path_for_id(doc.id)?;
     let mut doc_tab = DocTab {
+        runtime_id: 0,
         editor,
         doc,
         wrap_enabled: true,
@@ -3165,6 +3243,7 @@ fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Re
     doc.display_name = next_untitled_name(state);
     doc.backup_path = session::backup_path_for_id(doc.id)?;
     let doc_tab = DocTab {
+        runtime_id: 0,
         editor,
         doc,
         wrap_enabled: state.word_wrap_enabled,
@@ -3203,6 +3282,7 @@ fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
     doc.is_dirty = true;
 
     let doc_tab = DocTab {
+        runtime_id: 0,
         editor,
         doc,
         wrap_enabled: state.word_wrap_enabled && !source.doc.large_file_mode,
@@ -3238,16 +3318,25 @@ fn tab_base_name(doc_tab: &DocTab) -> String {
 fn tab_title(doc_tab: &DocTab) -> String {
     let mut title = tab_base_name(doc_tab);
     if doc_tab.doc.is_dirty {
-        title = format!("• {title}");
+        title = format!("{title}*");
     }
     title
 }
 
-fn add_tab(state: &mut AppState, title: &str, doc_tab: DocTab) -> Result<usize> {
+fn take_next_tab_runtime_id(state: &mut AppState) -> isize {
+    let id = state.next_tab_runtime_id;
+    state.next_tab_runtime_id = state.next_tab_runtime_id.saturating_add(1);
+    id as isize
+}
+
+fn add_tab(state: &mut AppState, title: &str, mut doc_tab: DocTab) -> Result<usize> {
     let index = state.docs.len();
-    insert_tab_item(state.tabs, index, title)?;
+    if doc_tab.runtime_id == 0 {
+        doc_tab.runtime_id = take_next_tab_runtime_id(state);
+    }
+    insert_tab_item(state.tab_host.top_tabs, index, title)?;
     state.docs.push(doc_tab);
-    rebuild_tab_list(state);
+    rebuild_vertical_tab_list(state);
     Ok(index)
 }
 
@@ -3282,41 +3371,78 @@ fn update_tab_text(state: &mut AppState, index: usize) {
         };
         unsafe {
             SendMessageW(
-                state.tabs,
+                state.tab_host.top_tabs,
                 TCM_SETITEMW,
                 WPARAM(index),
                 LPARAM(&mut item as *mut TCITEMW as isize),
             );
         }
-        rebuild_tab_list(state);
+        rebuild_vertical_tab_list(state);
     }
 }
 
-fn rebuild_tab_list(state: &mut AppState) {
+fn rebuild_vertical_tab_list(state: &mut AppState) {
     unsafe {
-        SendMessageW(state.tab_list, LB_RESETCONTENT, WPARAM(0), LPARAM(0));
+        SendMessageW(
+            state.tab_host.vertical_tabs,
+            LVM_DELETEALLITEMS,
+            WPARAM(0),
+            LPARAM(0),
+        );
     }
-    for doc_tab in &state.docs {
+    for (index, doc_tab) in state.docs.iter().enumerate() {
         let title = tab_title(doc_tab);
-        let wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut item = LVITEMW {
+            mask: LVIF_TEXT | LVIF_PARAM,
+            iItem: index as i32,
+            pszText: PWSTR(wide.as_mut_ptr()),
+            cchTextMax: wide.len() as i32,
+            lParam: LPARAM(doc_tab.runtime_id),
+            ..Default::default()
+        };
         unsafe {
             SendMessageW(
-                state.tab_list,
-                LB_ADDSTRING,
+                state.tab_host.vertical_tabs,
+                LVM_INSERTITEMW,
                 WPARAM(0),
-                LPARAM(wide.as_ptr() as isize),
+                LPARAM(&mut item as *mut LVITEMW as isize),
             );
         }
     }
-    set_tab_list_selection(state, state.active);
+    set_vertical_tab_selection(state, state.active);
 }
 
-fn set_tab_list_selection(state: &AppState, index: usize) {
+fn set_vertical_tab_selection(state: &AppState, index: usize) {
     if state.docs.is_empty() || index >= state.docs.len() {
         return;
     }
+    let select_mask = LVIS_SELECTED.0 | LVIS_FOCUSED.0;
+    let mut clear = LVITEMW {
+        stateMask: LIST_VIEW_ITEM_STATE_FLAGS(select_mask),
+        state: LIST_VIEW_ITEM_STATE_FLAGS(0),
+        ..Default::default()
+    };
     unsafe {
-        SendMessageW(state.tab_list, LB_SETCURSEL, WPARAM(index), LPARAM(0));
+        SendMessageW(
+            state.tab_host.vertical_tabs,
+            LVM_SETITEMSTATE,
+            WPARAM(usize::MAX),
+            LPARAM(&mut clear as *mut LVITEMW as isize),
+        );
+    }
+    let mut selected = LVITEMW {
+        stateMask: LIST_VIEW_ITEM_STATE_FLAGS(select_mask),
+        state: LIST_VIEW_ITEM_STATE_FLAGS(select_mask),
+        ..Default::default()
+    };
+    unsafe {
+        SendMessageW(
+            state.tab_host.vertical_tabs,
+            LVM_SETITEMSTATE,
+            WPARAM(index),
+            LPARAM(&mut selected as *mut LVITEMW as isize),
+        );
     }
 }
 
@@ -3331,9 +3457,14 @@ fn select_tab(hwnd: HWND, state: &mut AppState, index: usize) {
     }
     update_tab_text(state, index);
     unsafe {
-        SendMessageW(state.tabs, TCM_SETCURSEL, WPARAM(index), LPARAM(0));
+        SendMessageW(
+            state.tab_host.top_tabs,
+            TCM_SETCURSEL,
+            WPARAM(index),
+            LPARAM(0),
+        );
     }
-    set_tab_list_selection(state, index);
+    set_vertical_tab_selection(state, index);
 
     for (i, doc) in state.docs.iter().enumerate() {
         let show = if i == index { SW_SHOW } else { SW_HIDE };
@@ -3355,14 +3486,14 @@ fn select_tab(hwnd: HWND, state: &mut AppState, index: usize) {
 }
 
 fn tab_bar_height(state: &AppState) -> i32 {
-    let min_height = scale_for_dpi(state.tabs, 26);
+    let min_height = scale_for_dpi(state.tab_host.top_tabs, 26);
     if state.docs.is_empty() {
         return min_height;
     }
     let mut rect = windows::Win32::Foundation::RECT::default();
     let result = unsafe {
         SendMessageW(
-            state.tabs,
+            state.tab_host.top_tabs,
             TCM_GETITEMRECT,
             WPARAM(0),
             LPARAM(&mut rect as *mut _ as isize),
@@ -3397,6 +3528,13 @@ fn tab_index_at_point(tabs: HWND, count: usize, point: LPARAM) -> Option<usize> 
 
 fn doc_index_by_hwnd(state: &AppState, hwnd: HWND) -> Option<usize> {
     state.docs.iter().position(|doc| doc.editor == hwnd)
+}
+
+fn doc_index_by_runtime_id(state: &AppState, runtime_id: LPARAM) -> Option<usize> {
+    state
+        .docs
+        .iter()
+        .position(|doc| doc.runtime_id == runtime_id.0)
 }
 
 fn set_dirty(state: &mut AppState, index: usize, dirty: bool) {
@@ -3475,7 +3613,12 @@ fn close_tab(hwnd: HWND, state: &mut AppState, index: usize) -> Result<bool> {
     }
     unsafe {
         let _ = DestroyWindow(doc.editor);
-        SendMessageW(state.tabs, TCM_DELETEITEM, WPARAM(index), LPARAM(0));
+        SendMessageW(
+            state.tab_host.top_tabs,
+            TCM_DELETEITEM,
+            WPARAM(index),
+            LPARAM(0),
+        );
     }
 
     if state.active > index {
@@ -3692,6 +3835,7 @@ fn restore_session_entry(
     scintilla::set_savepoint(editor);
 
     let doc_tab = DocTab {
+        runtime_id: 0,
         editor,
         doc,
         wrap_enabled,
@@ -3948,22 +4092,37 @@ fn get_state(hwnd: HWND) -> Option<&'static mut AppState> {
     }
 }
 
-fn clamp_tab_list_width(state: &AppState, desired: i32, client_width: i32) -> i32 {
-    let min_width = scale_for_dpi(state.tab_list, 24);
-    let min_editor = scale_for_dpi(state.tab_list, 200);
-    let max_width = (client_width - min_editor - TAB_SPLITTER_WIDTH).max(min_width);
-    desired.clamp(min_width, max_width)
+fn clamp_vertical_tab_width(state: &AppState, desired: i32, client_width: i32) -> i32 {
+    let min_width = settings::MIN_VERTICAL_TAB_WIDTH_PX;
+    let max_width = settings::MAX_VERTICAL_TAB_WIDTH_PX;
+    let min_editor = scale_for_dpi(state.tab_host.vertical_tabs, 120);
+    let max_by_client = (client_width - min_editor - TAB_SPLITTER_WIDTH).max(min_width);
+    desired.clamp(min_width, max_width).min(max_by_client)
 }
 
 fn color_ref(r: u8, g: u8, b: u8) -> COLORREF {
     COLORREF(r as u32 | ((g as u32) << 8) | ((b as u32) << 16))
 }
 
-fn tab_list_colors(dark: bool) -> (COLORREF, COLORREF) {
+fn tab_theme(dark: bool) -> TabTheme {
     if dark {
-        (color_ref(212, 212, 212), color_ref(30, 30, 30))
+        TabTheme {
+            bg: color_ref(30, 30, 30),
+            fg: color_ref(212, 212, 212),
+            selection_bg: color_ref(61, 122, 214),
+            selection_fg: color_ref(255, 255, 255),
+            hover_bg: color_ref(52, 52, 52),
+            border: color_ref(45, 45, 45),
+        }
     } else {
-        (color_ref(32, 32, 32), color_ref(255, 255, 255))
+        TabTheme {
+            bg: color_ref(255, 255, 255),
+            fg: color_ref(32, 32, 32),
+            selection_bg: color_ref(204, 228, 247),
+            selection_fg: color_ref(0, 0, 0),
+            hover_bg: color_ref(240, 247, 253),
+            border: color_ref(215, 215, 215),
+        }
     }
 }
 
@@ -3996,7 +4155,7 @@ fn context_menu_position(lparam: LPARAM) -> (i32, i32) {
     }
 }
 
-fn tab_hit_test_at_cursor(tabs: HWND) -> Option<(usize, i32, i32)> {
+fn top_tab_hit_test_at_cursor(tabs: HWND) -> Option<(usize, i32, i32)> {
     let mut screen = POINT::default();
     if unsafe { GetCursorPos(&mut screen) }.is_err() {
         return None;
@@ -4022,6 +4181,44 @@ fn tab_hit_test_at_cursor(tabs: HWND) -> Option<(usize, i32, i32)> {
         None
     } else {
         Some((index as usize, screen.x, screen.y))
+    }
+}
+
+fn vertical_tab_hit_test_at_cursor(vertical_tabs: HWND) -> Option<(usize, i32, i32)> {
+    let mut screen = POINT::default();
+    if unsafe { GetCursorPos(&mut screen) }.is_err() {
+        return None;
+    }
+    let mut client = screen;
+    unsafe {
+        let _ = ScreenToClient(vertical_tabs, &mut client);
+    }
+    let mut hit = LVHITTESTINFO {
+        pt: client,
+        ..Default::default()
+    };
+    let index = unsafe {
+        SendMessageW(
+            vertical_tabs,
+            LVM_HITTEST,
+            WPARAM(0),
+            LPARAM(&mut hit as *mut LVHITTESTINFO as isize),
+        )
+    }
+    .0 as i32;
+    if index < 0 {
+        None
+    } else {
+        Some((index as usize, screen.x, screen.y))
+    }
+}
+
+fn tab_hit_test_at_cursor(state: &AppState) -> Option<(usize, i32, i32)> {
+    match state.tab_host.placement {
+        TabPlacement::Top => top_tab_hit_test_at_cursor(state.tab_host.top_tabs),
+        TabPlacement::Left | TabPlacement::Right => {
+            vertical_tab_hit_test_at_cursor(state.tab_host.vertical_tabs)
+        }
     }
 }
 
@@ -4230,45 +4427,78 @@ fn scale_for_dpi(hwnd: HWND, value: i32) -> i32 {
     value.saturating_mul(dpi).div_euclid(96)
 }
 
+fn persist_ui_settings(state: &AppState) {
+    let settings = UiSettings {
+        tab_placement: state.tab_host.placement,
+        vertical_tab_width_px: state.tab_host.vertical_width_px,
+    };
+    if let Err(err) = settings::save_settings(&settings) {
+        logging::log_error(&format!("settings_save_failed err={err}"));
+    }
+}
+
+fn handle_vertical_tab_custom_draw(state: &AppState, lparam: LPARAM) -> LRESULT {
+    let draw = unsafe { &mut *(lparam.0 as *mut NMLVCUSTOMDRAW) };
+    if draw.nmcd.dwDrawStage == CDDS_PREPAINT {
+        return LRESULT(CDRF_NOTIFYITEMDRAW as isize);
+    }
+    if draw.nmcd.dwDrawStage == CDDS_ITEMPREPAINT {
+        let item_state = draw.nmcd.uItemState.0;
+        if (item_state & CDIS_SELECTED.0) != 0 {
+            draw.clrText = state.tab_host.theme.selection_fg;
+            draw.clrTextBk = state.tab_host.theme.selection_bg;
+        } else if (item_state & CDIS_HOT.0) != 0 {
+            draw.clrText = state.tab_host.theme.fg;
+            draw.clrTextBk = state.tab_host.theme.hover_bg;
+        } else {
+            draw.clrText = state.tab_host.theme.fg;
+            draw.clrTextBk = state.tab_host.theme.bg;
+        }
+        return LRESULT(CDRF_NEWFONT as isize);
+    }
+    LRESULT(CDRF_DODEFAULT as isize)
+}
+
 fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
     state.editor_dark = enabled;
     update_editor_dark_menu(hwnd, enabled);
     for doc_tab in &state.docs {
         apply_syntax_for_doc(doc_tab, enabled);
     }
-    if let Err(err) = update_tab_list_theme(state, enabled) {
-        logging::log_error(&format!("Failed to update tab list theme: {err}"));
+    if let Err(err) = update_tab_host_theme(state, enabled) {
+        logging::log_error(&format!("tab_host_theme_update_failed err={err}"));
     }
     unsafe {
-        InvalidateRect(state.tab_list, None, true);
+        InvalidateRect(state.tab_host.vertical_tabs, None, true);
     }
 }
 
-fn set_tab_layout(hwnd: HWND, state: &mut AppState, layout: TabLayout) {
-    state.tab_layout = layout;
+fn set_tab_layout(hwnd: HWND, state: &mut AppState, layout: TabPlacement) {
+    state.tab_host.placement = layout;
     update_tab_layout_menu(hwnd, layout);
-    if layout == TabLayout::HorizontalTop && state.resizing_tabs {
-        state.resizing_tabs = false;
+    if layout == TabPlacement::Top && state.tab_host.resizing {
+        state.tab_host.resizing = false;
         unsafe {
             let _ = ReleaseCapture();
         }
     }
     let (show_tabs, show_list) = match layout {
-        TabLayout::HorizontalTop => (SW_SHOW, SW_HIDE),
-        TabLayout::VerticalLeft | TabLayout::VerticalRight => (SW_HIDE, SW_SHOW),
+        TabPlacement::Top => (SW_SHOW, SW_HIDE),
+        TabPlacement::Left | TabPlacement::Right => (SW_HIDE, SW_SHOW),
     };
     unsafe {
-        ShowWindow(state.tabs, show_tabs);
-        ShowWindow(state.tab_list, show_list);
-        let splitter_show = if layout == TabLayout::HorizontalTop {
+        ShowWindow(state.tab_host.top_tabs, show_tabs);
+        ShowWindow(state.tab_host.vertical_tabs, show_list);
+        let splitter_show = if layout == TabPlacement::Top {
             SW_HIDE
         } else {
             SW_SHOW
         };
-        ShowWindow(state.tab_splitter, splitter_show);
+        ShowWindow(state.tab_host.splitter, splitter_show);
     }
-    set_tab_list_selection(state, state.active);
+    set_vertical_tab_selection(state, state.active);
     layout_children(hwnd, state);
+    persist_ui_settings(state);
 }
 
 fn toggle_word_wrap(hwnd: HWND, state: &mut AppState) {
@@ -4331,41 +4561,61 @@ fn update_editor_dark_menu(hwnd: HWND, enabled: bool) {
     }
 }
 
-fn update_tab_list_theme(state: &mut AppState, dark: bool) -> Result<()> {
-    let (text, back) = tab_list_colors(dark);
-    let brush = unsafe { CreateSolidBrush(back) };
+fn update_tab_host_theme(state: &mut AppState, dark: bool) -> Result<()> {
+    let theme = tab_theme(dark);
+    let _ = theme.border;
+    let brush = unsafe { CreateSolidBrush(theme.bg) };
     if brush.0 == 0 {
-        return Err(AppError::win32("CreateSolidBrush(TabList)"));
+        return Err(AppError::win32("CreateSolidBrush(VerticalTabs)"));
     }
-    if state.tab_list_brush.0 != 0 {
+    if state.tab_host.vertical_tabs_brush.0 != 0 {
         unsafe {
-            let _ = DeleteObject(state.tab_list_brush);
+            let _ = DeleteObject(state.tab_host.vertical_tabs_brush);
         }
     }
-    state.tab_list_brush = brush;
-    state.tab_list_text = text;
-    state.tab_list_back = back;
+    state.tab_host.vertical_tabs_brush = brush;
+    state.tab_host.theme = theme;
+    unsafe {
+        SendMessageW(
+            state.tab_host.vertical_tabs,
+            LVM_SETBKCOLOR,
+            WPARAM(0),
+            LPARAM(theme.bg.0 as isize),
+        );
+        SendMessageW(
+            state.tab_host.vertical_tabs,
+            LVM_SETTEXTBKCOLOR,
+            WPARAM(0),
+            LPARAM(theme.bg.0 as isize),
+        );
+        SendMessageW(
+            state.tab_host.vertical_tabs,
+            LVM_SETTEXTCOLOR,
+            WPARAM(0),
+            LPARAM(theme.fg.0 as isize),
+        );
+    }
     Ok(())
 }
 
-fn destroy_tab_list_brush(state: &mut AppState) {
-    if state.tab_list_brush.0 != 0 {
+fn destroy_tab_host_brush(state: &mut AppState) {
+    if state.tab_host.vertical_tabs_brush.0 != 0 {
         unsafe {
-            let _ = DeleteObject(state.tab_list_brush);
+            let _ = DeleteObject(state.tab_host.vertical_tabs_brush);
         }
-        state.tab_list_brush = HBRUSH(0);
+        state.tab_host.vertical_tabs_brush = HBRUSH(0);
     }
 }
 
-fn update_tab_layout_menu(hwnd: HWND, layout: TabLayout) {
+fn update_tab_layout_menu(hwnd: HWND, layout: TabPlacement) {
     let menu = unsafe { GetMenu(hwnd) };
     if menu.0 == 0 {
         return;
     }
     let (horizontal, left, right) = match layout {
-        TabLayout::HorizontalTop => (true, false, false),
-        TabLayout::VerticalLeft => (false, true, false),
-        TabLayout::VerticalRight => (false, false, true),
+        TabPlacement::Top => (true, false, false),
+        TabPlacement::Left => (false, true, false),
+        TabPlacement::Right => (false, false, true),
     };
     set_menu_check(menu, IDM_VIEW_TABS_HORIZONTAL, horizontal);
     set_menu_check(menu, IDM_VIEW_TABS_VERTICAL_LEFT, left);
@@ -4439,11 +4689,56 @@ unsafe extern "system" fn splitter_wndproc(
             let parent = unsafe { GetParent(hwnd) };
             if parent.0 != 0
                 && let Some(state) = get_state(parent)
+                && state.tab_host.is_vertical()
             {
-                state.resizing_tabs = true;
-                unsafe {
-                    let _ = SetCapture(parent);
+                let mut cursor = POINT::default();
+                if unsafe { GetCursorPos(&mut cursor) }.is_ok() {
+                    state.tab_host.drag_start_x_screen = cursor.x;
                 }
+                state.tab_host.drag_start_width = state.tab_host.vertical_width_px;
+                state.tab_host.resizing = true;
+                unsafe {
+                    let _ = SetCapture(hwnd);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_MOUSEMOVE => {
+            let parent = unsafe { GetParent(hwnd) };
+            if parent.0 != 0
+                && let Some(state) = get_state(parent)
+                && state.tab_host.resizing
+            {
+                let mut cursor = POINT::default();
+                if unsafe { GetCursorPos(&mut cursor) }.is_ok() {
+                    let delta = cursor.x - state.tab_host.drag_start_x_screen;
+                    let desired = match state.tab_host.placement {
+                        TabPlacement::Left => state.tab_host.drag_start_width + delta,
+                        TabPlacement::Right => state.tab_host.drag_start_width - delta,
+                        TabPlacement::Top => state.tab_host.vertical_width_px,
+                    };
+                    let mut rect = windows::Win32::Foundation::RECT::default();
+                    unsafe {
+                        let _ = GetClientRect(parent, &mut rect);
+                    }
+                    let client_width = rect.right - rect.left;
+                    state.tab_host.vertical_width_px =
+                        clamp_vertical_tab_width(state, desired, client_width);
+                    layout_children(parent, state);
+                }
+                return LRESULT(0);
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
+        WM_LBUTTONUP => {
+            let _ = unsafe { ReleaseCapture() };
+            let parent = unsafe { GetParent(hwnd) };
+            if parent.0 != 0
+                && let Some(state) = get_state(parent)
+                && state.tab_host.resizing
+            {
+                state.tab_host.resizing = false;
+                persist_ui_settings(state);
             }
             LRESULT(0)
         }
@@ -5370,9 +5665,9 @@ mod tests {
 
     #[test]
     fn tab_layout_cycles() {
-        assert_eq!(TabLayout::HorizontalTop.next(), TabLayout::VerticalLeft);
-        assert_eq!(TabLayout::VerticalLeft.next(), TabLayout::VerticalRight);
-        assert_eq!(TabLayout::VerticalRight.next(), TabLayout::HorizontalTop);
+        assert_eq!(TabPlacement::Top.next(), TabPlacement::Left);
+        assert_eq!(TabPlacement::Left.next(), TabPlacement::Right);
+        assert_eq!(TabPlacement::Right.next(), TabPlacement::Top);
     }
 
     #[test]

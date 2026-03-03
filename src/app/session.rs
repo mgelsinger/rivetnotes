@@ -9,6 +9,9 @@ use crate::storage::atomic_write::{
     atomic_write_bytes, atomic_write_json, cleanup_stale_temp_files,
 };
 
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
+
 pub const DEFAULT_REMEMBER_SESSION: bool = true;
 pub const DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP: bool = true;
 pub const DEFAULT_BACKUP_INTERVAL_SECONDS: u32 = 7;
@@ -22,6 +25,14 @@ const SESSION_FILE_NAME: &str = "session.json";
 const SESSION_SCHEMA_VERSION: u32 = 1;
 
 const TEMP_CLEANUP_MAX_AGE_DAYS: u64 = 7;
+
+#[cfg(test)]
+static TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) fn test_env_lock() -> &'static Mutex<()> {
+    TEST_ENV_LOCK.get_or_init(|| Mutex::new(()))
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionEntry {
@@ -272,16 +283,13 @@ fn default_always_on_top() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     fn with_temp_local_appdata<F>(action: F)
     where
         F: FnOnce(PathBuf),
     {
-        let lock = ENV_LOCK.get_or_init(|| Mutex::new(()));
+        let lock = test_env_lock();
         let _guard = lock.lock().unwrap();
         let temp = TempDir::new().unwrap();
         let original_local = std::env::var("LOCALAPPDATA").ok();

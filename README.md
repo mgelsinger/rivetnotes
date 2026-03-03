@@ -1,67 +1,115 @@
 # Rivet
 
-Rivet is a Windows-native text editor built for speed and calm. It keeps the
-feature set intentionally small and makes those essentials feel polished and
-predictable. If you want a clean editor that starts fast and stays out of your
-way, Rivet is the point.
+Rivet is a Windows-native text editor focused on fast startup, clean behavior,
+and reliable recovery. It is intentionally compact: the core workflows are
+implemented deeply instead of spreading effort across a large plugin surface.
 
-## Features
+## Why Rivet
 
-- Tabbed editing with horizontal or vertical tab layout
-- Session snapshot + periodic backup (Notepad++-style restore of unsaved work)
-- Find/Replace core flow: `Ctrl+F`, `Ctrl+H`, `F3`, `Shift+F3`, `Replace`, `Replace All` (single undo step), wrap-around, match case, whole word
-- Go To Line (`Ctrl+G`) using Scintilla line navigation
-- Find in Files with cancellation
+- Native Win32 UI with a Scintilla editing engine
+- Strong session recovery model with periodic snapshots and crash-safe writes
+- Fast, predictable keyboard-driven editing flow
+- Minimal visual noise with a practical status bar and focused menus
+
+## Core Capabilities
+
+### Editing
+
+- Multi-document tabs with three placements:
+  - `Top` (classic horizontal tabs)
+  - `Left` (vertical list)
+  - `Right` (vertical list)
+- Resizable vertical tab panel with persisted width
+- Dirty document indicators in both top and vertical tab views
+- Word wrap toggle and `Always On Top` toggle in the `View` menu
+
+### Search and Navigation
+
+- Find/Replace workflow:
+  - `Ctrl+F`, `Ctrl+H`
+  - `F3`, `Shift+F3`
+  - Match case, whole word, regex, wrap
+  - `Replace All` grouped into a single undo step
+- `Go To Line` (`Ctrl+G`)
+- Find in Files with cancel support
+
+### File and Session Safety
+
+- Session restore with open tabs and active tab tracking
+- Periodic backup snapshots for unsaved changes
+- Crash-safe atomic writes for session and backup data
+- Stale temp cleanup at startup
+
+### Language and Text Tools
+
 - Syntax highlighting for common formats
-- Word wrap toggle (on by default) and `Always On Top` toggle in `View`
-- Status bar truth fields: `Ln/Col`, `Sel`, `EOL`, `ENC`, dirty indicator
-- Crash-safe atomic writes for session/backup files with stale temp cleanup on startup
-- About dialog with build metadata (version, commit SHA, build UTC, source, data dir)
-- Minimal menu bar (`File`, `Edit`, `View`, `Help`) and tiny editor context menu
-- Text transforms: `Uppercase`, `Lowercase`, `Trim Leading + Trailing Whitespace`
-- Shortcut support for transforms (`Ctrl+U`, `Ctrl+Shift+U`) and tab close (`Ctrl+W`)
-- Clipboard path helpers in `Edit -> Copy to Clipboard`:
+- Text transforms:
+  - `Uppercase`
+  - `Lowercase`
+  - `Trim Leading + Trailing Whitespace`
+- Clipboard path helpers:
   - `Copy Full Path`
   - `Copy Filename`
   - `Copy Directory Path`
 
-## Install
+## Keyboard Shortcuts
 
-- Installer: download `rivet-<version>-setup.exe` from Releases
-- Portable: download `rivet-<version>-win64-portable.zip` from Releases
-- Windows SmartScreen: if prompted, click `More info` → `Run anyway`.
+| Action | Shortcut |
+|---|---|
+| New file | `Ctrl+N` |
+| Open | `Ctrl+O` |
+| Save | `Ctrl+S` |
+| Save all | `Ctrl+Shift+S` |
+| Close tab | `Ctrl+W` |
+| Cycle tab placement | `Ctrl+Alt+T` |
+| Find | `Ctrl+F` |
+| Replace | `Ctrl+H` |
+| Find next / previous | `F3` / `Shift+F3` |
+| Go to line | `Ctrl+G` |
+| Uppercase / Lowercase | `Ctrl+Shift+U` / `Ctrl+U` |
 
-## Build it from source
+## Installation
 
-Prerequisites:
+- Installer: download `rivet-<version>-setup.exe` from GitHub Releases
+- Portable: download `rivet-<version>-win64-portable.zip` from GitHub Releases
+- If SmartScreen warns, use `More info` then `Run anyway`
 
-- Rust toolchain (stable)
+## Build From Source
+
+### Requirements
+
 - Windows 11 x64
+- Rust stable toolchain
 
-Commands:
+### Commands
 
 ```powershell
 cargo fmt
-cargo clippy -D warnings
+cargo clippy -- -D warnings
 cargo test
 cargo run
 ```
 
-## FAQ
+## Data and Configuration
 
-- Why no plugins? Rivet is intentionally small to stay fast and predictable.
-- Is there an auto-updater? Not in the MVP; updates are manual to keep the attack surface small while considering avenues of distribution.
-- Does it support large files? Yes, with a Large File Mode that disables heavy features.
-- Where are settings stored? Local config files under the user's profile.
-- Is there a portable build? Yes, a portable zip is provided alongside the installer.
+Rivet stores state under `%LOCALAPPDATA%\Rivet` (fallback `%APPDATA%\Rivet`):
+
+- `settings.json` for UI settings such as tab placement and vertical tab width
+- `sessions\session.json` for remembered documents/session state
+- `backup\*.bak` for snapshot files
+
+## Project Quality
+
+- CI enforces formatting, linting, and tests
+- Unit tests cover core session, settings, text transform, and command behavior
+- Build metadata is embedded into `Help -> About Rivet`
 
 ## Contributing
 
-See `CONTRIBUTING.md`. At minimum, CI must be green before merging.
-CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`,
-and a scheduled RustSec dependency audit.
+See `CONTRIBUTING.md` for contribution rules and workflow.
 
 ## License
 
 MIT. See `LICENSE`.
-Third-party notices are in `NOTICE.txt` and `THIRD_PARTY_NOTICES/`.
+
+Third-party notices: `NOTICE.txt` and `THIRD_PARTY_NOTICES/`.
