@@ -9,7 +9,9 @@ use windows::Win32::Foundation::{
     BOOL, COLORREF, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HINSTANCE, HWND, LPARAM, LRESULT,
     POINT, WPARAM,
 };
-use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DeleteObject, HBRUSH, InvalidateRect, ScreenToClient};
+use windows::Win32::Graphics::Gdi::{
+    CreateSolidBrush, DeleteObject, HBRUSH, InvalidateRect, ScreenToClient,
+};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::Dialogs::{
@@ -20,15 +22,14 @@ use windows::Win32::UI::Controls::{
     CDDS_ITEMPREPAINT, CDDS_PREPAINT, CDIS_HOT, CDIS_SELECTED, CDRF_DODEFAULT, CDRF_NEWFONT,
     CDRF_NOTIFYITEMDRAW, ICC_LISTVIEW_CLASSES, ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX,
     InitCommonControlsEx, LIST_VIEW_ITEM_STATE_FLAGS, LVCF_WIDTH, LVCOLUMNW, LVHITTESTINFO,
-    LVIF_PARAM, LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVN_ITEMCHANGED,
-    LVM_DELETEALLITEMS, LVM_HITTEST, LVM_INSERTCOLUMNW, LVM_INSERTITEMW, LVM_SETCOLUMNWIDTH,
-    LVM_SETBKCOLOR, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMSTATE, LVM_SETTEXTBKCOLOR,
-    LVM_SETTEXTCOLOR, LVS_EX_DOUBLEBUFFER,
-    LVS_EX_FULLROWSELECT, LVS_NOCOLUMNHEADER, LVS_REPORT, LVS_SHOWSELALWAYS, LVS_SINGLESEL,
-    NMLISTVIEW, NMLVCUSTOMDRAW, NMHDR, NM_CUSTOMDRAW, NM_RCLICK, SB_SETPARTS, SB_SETTEXTW,
-    STATUSCLASSNAMEW, TCHITTESTINFO, TCIF_TEXT, TCITEMW, TCM_DELETEITEM, TCM_GETCURSEL,
-    TCM_GETITEMRECT, TCM_HITTEST, TCM_INSERTITEMW, TCM_SETCURSEL, TCM_SETITEMW, TCN_SELCHANGE,
-    WC_LISTVIEWW, WC_TABCONTROLW,
+    LVIF_PARAM, LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVM_DELETEALLITEMS, LVM_HITTEST,
+    LVM_INSERTCOLUMNW, LVM_INSERTITEMW, LVM_SETBKCOLOR, LVM_SETCOLUMNWIDTH,
+    LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMSTATE, LVM_SETTEXTBKCOLOR, LVM_SETTEXTCOLOR,
+    LVN_ITEMCHANGED, LVS_EX_DOUBLEBUFFER, LVS_EX_FULLROWSELECT, LVS_NOCOLUMNHEADER, LVS_REPORT,
+    LVS_SHOWSELALWAYS, LVS_SINGLESEL, NM_CUSTOMDRAW, NM_RCLICK, NMHDR, NMLISTVIEW, NMLVCUSTOMDRAW,
+    SB_SETPARTS, SB_SETTEXTW, STATUSCLASSNAMEW, TCHITTESTINFO, TCIF_TEXT, TCITEMW, TCM_DELETEITEM,
+    TCM_GETCURSEL, TCM_GETITEMRECT, TCM_HITTEST, TCM_INSERTITEMW, TCM_SETCURSEL, TCM_SETITEMW,
+    TCN_SELCHANGE, WC_LISTVIEWW, WC_TABCONTROLW,
 };
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, SetProcessDpiAwarenessContext,
@@ -44,32 +45,29 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable, DestroyMenu,
     DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL, ES_NUMBER, EnableMenuItem, FALT, FCONTROL,
     FSHIFT, FVIRTKEY, GCLP_HICON, GCLP_HICONSM, GWLP_USERDATA, GetClientRect, GetCursorPos,
-    GetMenu, GetMessageW, GetParent, GetSystemMetrics, GetWindowLongPtrW,
-    GetWindowTextLengthW,
+    GetMenu, GetMessageW, GetParent, GetSystemMetrics, GetWindowLongPtrW, GetWindowTextLengthW,
     GetWindowTextW, HACCEL, HICON, HMENU, HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL,
     ICON_SMALL2, IDC_ARROW, IDC_SIZEWE, IDI_APPLICATION, IDNO, IDYES, IMAGE_ICON, KillTimer,
-    LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LBN_DBLCLK,
-    LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW,
-    LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL,
-    MF_BYCOMMAND, MF_CHECKED, MF_ENABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING,
-    MF_UNCHECKED, MSG, MessageBoxW, PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON,
-    SM_CYICON, SM_CYSMICON, SW_HIDE, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER,
-    SYSTEM_METRICS_INDEX, SendMessageW, SetClassLongPtrW, SetCursor, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WM_ACTIVATEAPP,
-    WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_DESTROY, WM_DROPFILES,
-    WM_GETICON, WM_INITMENUPOPUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE,
-    WM_NCDESTROY, WM_NOTIFY, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_BORDER,
-    WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
-    WS_VSCROLL,
+    LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LBN_DBLCLK, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY,
+    LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW, LoadImageW, MB_ICONERROR,
+    MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL, MF_BYCOMMAND, MF_CHECKED,
+    MF_ENABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MessageBoxW,
+    PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE,
+    SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_METRICS_INDEX,
+    SendMessageW, SetClassLongPtrW, SetCursor, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WM_ACTIVATEAPP, WM_CLOSE, WM_COMMAND,
+    WM_CONTEXTMENU, WM_CREATE, WM_DESTROY, WM_DROPFILES, WM_GETICON, WM_INITMENUPOPUP,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY,
+    WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CAPTION, WS_CHILD,
+    WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::PWSTR;
 use windows::core::{HSTRING, PCWSTR, w};
 
 use crate::app::document::{self, Document, Eol, TextEncoding};
-use crate::app::settings::{self, TabPlacement, UiSettings};
 use crate::app::session;
+use crate::app::settings::{self, TabPlacement, UiSettings};
 use crate::commands::copy_full_path::{
     CopyPathKind, can_copy_directory_path, can_copy_filename, can_copy_full_path,
     copy_directory_path, copy_filename, copy_full_path,
@@ -629,12 +627,7 @@ fn create_menu() -> Result<HMENU> {
             IDM_VIEW_TABS_VERTICAL_RIGHT as usize,
             w!("Right"),
         )?;
-        AppendMenuW(
-            view_menu,
-            MF_POPUP,
-            tabs_menu.0 as usize,
-            w!("Tabs"),
-        )?;
+        AppendMenuW(view_menu, MF_POPUP, tabs_menu.0 as usize, w!("Tabs"))?;
         AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(
             view_menu,
@@ -966,9 +959,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             LRESULT(0)
         }
-        WM_MOUSEMOVE => {
-            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
-        }
+        WM_MOUSEMOVE => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
         WM_LBUTTONUP => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
         WM_CONTEXTMENU => {
             let source = HWND(wparam.0 as isize);
@@ -1386,7 +1377,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     {
                         if let Some((index, x, y)) = tab_hit_test_at_cursor(state) {
                             select_tab(hwnd, state, index);
-                            if let Some(command_id) = show_tab_context_menu(hwnd, state, index, x, y)
+                            if let Some(command_id) =
+                                show_tab_context_menu(hwnd, state, index, x, y)
                             {
                                 unsafe {
                                     SendMessageW(
@@ -1425,7 +1417,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                             && (info.uOldState & LVIS_SELECTED.0) == 0;
                         if became_selected && info.iItem >= 0 {
                             let target = doc_index_by_runtime_id(state, info.lParam)
-                                .or_else(|| Some(info.iItem as usize));
+                                .or(Some(info.iItem as usize));
                             if let Some(index) = target
                                 && index < state.docs.len()
                                 && index != state.active
@@ -1436,7 +1428,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                         return LRESULT(0);
                     }
 
-                    if nmhdr.hwndFrom == state.tab_host.vertical_tabs && nmhdr.code == NM_CUSTOMDRAW {
+                    if nmhdr.hwndFrom == state.tab_host.vertical_tabs && nmhdr.code == NM_CUSTOMDRAW
+                    {
                         return handle_vertical_tab_custom_draw(state, lparam);
                     }
                 }
@@ -1594,10 +1587,10 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
                     | WS_BORDER.0
                     | WS_TABSTOP.0
                     | WS_CLIPSIBLINGS.0
-                    | LVS_REPORT as u32
-                    | LVS_SINGLESEL as u32
-                    | LVS_NOCOLUMNHEADER as u32
-                    | LVS_SHOWSELALWAYS as u32,
+                    | LVS_REPORT
+                    | LVS_SINGLESEL
+                    | LVS_NOCOLUMNHEADER
+                    | LVS_SHOWSELALWAYS,
             ),
             0,
             0,

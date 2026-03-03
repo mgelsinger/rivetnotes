@@ -1,3 +1,3 @@
 pub mod document;
-pub mod settings;
 pub mod session;
+pub mod settings;

@@ -28,6 +28,10 @@ jobs:
           components: rustfmt, clippy
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy -- -D warnings
       - name: Test
         run: cargo test
       - name: Build portable

@@ -154,8 +154,14 @@ mod tests {
 
     #[test]
     fn tab_placement_serializes_as_lowercase() {
-        assert_eq!(serde_json::to_string(&TabPlacement::Top).unwrap(), "\"top\"");
-        assert_eq!(serde_json::to_string(&TabPlacement::Left).unwrap(), "\"left\"");
+        assert_eq!(
+            serde_json::to_string(&TabPlacement::Top).unwrap(),
+            "\"top\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TabPlacement::Left).unwrap(),
+            "\"left\""
+        );
         assert_eq!(
             serde_json::to_string(&TabPlacement::Right).unwrap(),
             "\"right\""
