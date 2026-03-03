@@ -7,6 +7,14 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 - TBD.
 
+## [0.4.1] - 2026-03-03
+
+- Fixed CI failures for `cargo fmt --check` and `cargo clippy -- -D warnings`
+  on the `v0.4.0` line.
+- Aligned release gating with CI by adding `fmt` and `clippy` checks to
+  `.github/workflows/release.yml` before tests/build/publish.
+- Validated the updated CI pipeline end-to-end on `main` with all required jobs green.
+
 ## [0.4.0] - 2026-03-03
 
 - Introduced a `TabStripHost` architecture that supports three tab placements:
