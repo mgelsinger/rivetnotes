@@ -36,13 +36,18 @@ implemented deeply instead of spreading effort across a large plugin surface.
 ### File and Session Safety
 
 - Session restore with open tabs and active tab tracking
+- Recent Files (MRU) menu, persisted across sessions
+- Encoding detection: UTF-8, UTF-8 BOM, UTF-16 LE/BE, with Windows-1252
+  (ANSI) fallback for legacy files
 - Periodic backup snapshots for unsaved changes
 - Crash-safe atomic writes for session and backup data
 - Stale temp cleanup at startup
 
 ### Language and Text Tools
 
-- Syntax highlighting for common formats
+- Syntax highlighting for common formats (JSON, XML, Python, PowerShell,
+  YAML, HTML, CSS, C/C++, and **Markdown**)
+- Markdown heading folding (code-fence aware)
 - Text transforms:
   - `Uppercase`
   - `Lowercase`

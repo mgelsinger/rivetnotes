@@ -17,6 +17,7 @@ use crate::error::{AppError, Result};
 const SCI_SETCODEPAGE: u32 = 2037;
 const SCI_SETTEXT: u32 = 2181;
 const SCI_GETTEXT: u32 = 2182;
+const SCI_INSERTTEXT: u32 = 2003;
 const SCI_GETLENGTH: u32 = 2006;
 const SCI_GETCHARAT: u32 = 2007;
 const SCI_GETCURRENTPOS: u32 = 2008;
@@ -86,7 +87,6 @@ const SCI_UPPERCASE: u32 = 2341;
 const SCI_USEPOPUP: u32 = 2371;
 const SCI_SETEOLMODE: u32 = 2031;
 const SCI_GETEOLMODE: u32 = 2030;
-const SCI_GETCODEPAGE: u32 = 2137;
 const SCI_SETWRAPMODE: u32 = 2268;
 const SCI_GETSELTEXT: u32 = 2161;
 const SCI_GETTARGETSTART: u32 = 2191;
@@ -99,6 +99,7 @@ const SCI_STYLESETBOLD: u32 = 2053;
 const SCI_STYLESETITALIC: u32 = 2054;
 const SCI_STYLESETSIZE: u32 = 2055;
 const SCI_STYLESETFONT: u32 = 2056;
+const SCI_STYLESETUNDERLINE: u32 = 2059;
 const SCI_SETSELFORE: u32 = 2067;
 const SCI_SETSELBACK: u32 = 2068;
 const SCI_SETCARETFORE: u32 = 2069;
@@ -127,6 +128,7 @@ const SCI_INDICSETOUTLINEALPHA: u32 = 2558;
 
 const SC_CP_UTF8: usize = 65001;
 const SC_EOL_CRLF: usize = 0;
+const SC_EOL_CR: usize = 1;
 const SC_EOL_LF: usize = 2;
 const SC_WRAP_NONE: usize = 0;
 const SC_WRAP_WORD: usize = 1;
@@ -242,6 +244,25 @@ const SCE_PROPS_COMMENT: usize = 1;
 const SCE_PROPS_SECTION: usize = 2;
 const SCE_PROPS_ASSIGNMENT: usize = 3;
 const SCE_PROPS_KEY: usize = 5;
+
+const SCE_MARKDOWN_STRONG1: usize = 2;
+const SCE_MARKDOWN_STRONG2: usize = 3;
+const SCE_MARKDOWN_EM1: usize = 4;
+const SCE_MARKDOWN_EM2: usize = 5;
+const SCE_MARKDOWN_HEADER1: usize = 6;
+const SCE_MARKDOWN_HEADER2: usize = 7;
+const SCE_MARKDOWN_HEADER3: usize = 8;
+const SCE_MARKDOWN_HEADER4: usize = 9;
+const SCE_MARKDOWN_HEADER5: usize = 10;
+const SCE_MARKDOWN_HEADER6: usize = 11;
+const SCE_MARKDOWN_ULIST_ITEM: usize = 13;
+const SCE_MARKDOWN_OLIST_ITEM: usize = 14;
+const SCE_MARKDOWN_BLOCKQUOTE: usize = 15;
+const SCE_MARKDOWN_STRIKEOUT: usize = 16;
+const SCE_MARKDOWN_LINK: usize = 18;
+const SCE_MARKDOWN_CODE: usize = 19;
+const SCE_MARKDOWN_CODE2: usize = 20;
+const SCE_MARKDOWN_CODEBK: usize = 21;
 
 const fn color(r: u8, g: u8, b: u8) -> u32 {
     r as u32 | ((g as u32) << 8) | ((b as u32) << 16)
@@ -640,6 +661,25 @@ pub fn goto_pos(hwnd: HWND, pos: usize) {
     send_message(hwnd, SCI_GOTOPOS, pos, 0);
 }
 
+/// Inserts `text` at byte position `pos` without moving the caret/selection
+/// the way a paste would. Used for structural edits like adding a line below a
+/// collapsed block.
+pub fn insert_text(hwnd: HWND, pos: usize, text: &str) {
+    let Ok(text) = CString::new(text) else {
+        return;
+    };
+    send_message(hwnd, SCI_INSERTTEXT, pos, text.as_ptr() as isize);
+}
+
+/// The newline sequence matching the document's current EOL mode.
+pub fn eol_string(hwnd: HWND) -> &'static str {
+    match get_eol_mode(hwnd) {
+        n if n == SC_EOL_CR as i32 => "\r",
+        n if n == SC_EOL_LF as i32 => "\n",
+        _ => "\r\n",
+    }
+}
+
 pub fn goto_line(hwnd: HWND, line: usize) {
     send_message(hwnd, SCI_GOTOLINE, line, 0);
 }
@@ -822,10 +862,6 @@ pub fn get_eol_mode(hwnd: HWND) -> i32 {
     send_message(hwnd, SCI_GETEOLMODE, 0, 0).0 as i32
 }
 
-pub fn get_codepage(hwnd: HWND) -> i32 {
-    send_message(hwnd, SCI_GETCODEPAGE, 0, 0).0 as i32
-}
-
 pub fn set_wrap_enabled(hwnd: HWND, enabled: bool) {
     let mode = if enabled { SC_WRAP_WORD } else { SC_WRAP_NONE };
     send_message(hwnd, SCI_SETWRAPMODE, mode, 0);
@@ -907,7 +943,8 @@ pub fn set_hidden_line_color(hwnd: HWND, rgb: u32) {
 
 fn lexer_name(lexer: LexerKind) -> &'static str {
     match lexer {
-        LexerKind::Null | LexerKind::Markdown => "null",
+        LexerKind::Null => "null",
+        LexerKind::Markdown => "markdown",
         LexerKind::Cpp | LexerKind::JavaScript => "cpp",
         LexerKind::Json => "json",
         LexerKind::Yaml => "yaml",
@@ -967,7 +1004,45 @@ fn apply_lexer_properties(hwnd: HWND, lexer: LexerKind) {
 
 fn apply_lexer_styles(hwnd: HWND, lexer: LexerKind) {
     match lexer {
-        LexerKind::Null | LexerKind::Markdown => {}
+        LexerKind::Null => {}
+        LexerKind::Markdown => {
+            for header in [
+                SCE_MARKDOWN_HEADER1,
+                SCE_MARKDOWN_HEADER2,
+                SCE_MARKDOWN_HEADER3,
+                SCE_MARKDOWN_HEADER4,
+                SCE_MARKDOWN_HEADER5,
+                SCE_MARKDOWN_HEADER6,
+            ] {
+                set_style(hwnd, header, COLOR_KEYWORD, true, false);
+            }
+            // Strong/emphasis keep the theme's default foreground.
+            set_style_bold(hwnd, SCE_MARKDOWN_STRONG1, true);
+            set_style_bold(hwnd, SCE_MARKDOWN_STRONG2, true);
+            set_style_italic(hwnd, SCE_MARKDOWN_EM1, true);
+            set_style_italic(hwnd, SCE_MARKDOWN_EM2, true);
+            set_style(
+                hwnd,
+                SCE_MARKDOWN_ULIST_ITEM,
+                COLOR_KEYWORD_ALT,
+                true,
+                false,
+            );
+            set_style(
+                hwnd,
+                SCE_MARKDOWN_OLIST_ITEM,
+                COLOR_KEYWORD_ALT,
+                true,
+                false,
+            );
+            set_style(hwnd, SCE_MARKDOWN_BLOCKQUOTE, COLOR_COMMENT, false, true);
+            set_style(hwnd, SCE_MARKDOWN_STRIKEOUT, COLOR_COMMENT, false, false);
+            set_style(hwnd, SCE_MARKDOWN_LINK, COLOR_VALUE, false, false);
+            set_style_underline(hwnd, SCE_MARKDOWN_LINK, true);
+            set_style(hwnd, SCE_MARKDOWN_CODE, COLOR_STRING, false, false);
+            set_style(hwnd, SCE_MARKDOWN_CODE2, COLOR_STRING, false, false);
+            set_style(hwnd, SCE_MARKDOWN_CODEBK, COLOR_STRING, false, false);
+        }
         LexerKind::Cpp | LexerKind::JavaScript => {
             set_style(hwnd, SCE_C_COMMENT, COLOR_COMMENT, false, true);
             set_style(hwnd, SCE_C_COMMENTLINE, COLOR_COMMENT, false, false);
@@ -1144,6 +1219,15 @@ fn set_style_bold(hwnd: HWND, style: usize, bold: bool) {
 
 fn set_style_italic(hwnd: HWND, style: usize, italic: bool) {
     send_message(hwnd, SCI_STYLESETITALIC, style, if italic { 1 } else { 0 });
+}
+
+fn set_style_underline(hwnd: HWND, style: usize, underline: bool) {
+    send_message(
+        hwnd,
+        SCI_STYLESETUNDERLINE,
+        style,
+        if underline { 1 } else { 0 },
+    );
 }
 
 fn set_style_size(hwnd: HWND, style: usize, size: usize) {

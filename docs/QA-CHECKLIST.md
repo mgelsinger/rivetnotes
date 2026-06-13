@@ -41,6 +41,7 @@ signing.
   the tab.
 - [ ] Splitter drag resizes the strip; the new width persists across
   restarts.
+- [ ] Middle-clicking a vertical tab closes it (matches Top tabs).
 
 ## Dark-mode toggle (`View → Dark Mode`)
 
@@ -72,10 +73,34 @@ signing.
   surfaces the Large File Mode flag, word wrap is off, syntax highlighting
   is suppressed.
 
-## Markdown folds
+## Markdown
 
-- [ ] Open a `.md` file with `#` headings — fold markers appear in the
-  fold gutter; clicking a marker collapses/expands the section.
+- [ ] Open a `.md` file: headings render bold, `**strong**`/`*emphasis*`
+  show weight/italic, fenced code and `` `code` `` are tinted, links are
+  underlined (light + dark mode).
+- [ ] `#` headings get fold markers in the gutter; clicking collapses/
+  expands the section.
+- [ ] A `# comment` line inside a ``` fenced block or a 4-space-indented
+  block does **not** create a fold marker.
+- [ ] Typing rapidly in a large `.md` file stays responsive (fold recompute
+  is debounced, not per-keystroke).
+
+## Encodings
+
+- [ ] Open a legacy Windows-1252 file (e.g. one containing `é`, `—`, smart
+  quotes): it opens (no error dialog) and the status bar shows `ANSI`.
+- [ ] `Ctrl+S` on that file keeps it `ANSI`; round-trips without mojibake.
+- [ ] Type an emoji into an ANSI file and `Ctrl+S` — a clear error points to
+  `Save As` (which writes UTF-8).
+- [ ] Open a UTF-16 LE file — status bar shows `UTF-16 LE` (not `UTF-8`).
+
+## Recent Files (MRU)
+
+- [ ] `File → Recent Files` lists files opened via Open dialog, drag-drop,
+  and Find-in-Files hits, newest first, capped at 10.
+- [ ] Re-opening a listed file moves it to the top without duplicating.
+- [ ] Clicking an entry whose file was deleted prunes it and shows a notice.
+- [ ] `Clear Recent Files` empties the list; the list survives a restart.
 
 ## Tip
 

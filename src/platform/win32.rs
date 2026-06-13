@@ -39,7 +39,9 @@ use windows::Win32::UI::Controls::{
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, SetProcessDpiAwarenessContext,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_MENU, VK_RETURN,
+};
 use windows::Win32::UI::Shell::{
     BIF_NEWDIALOGSTYLE, BIF_RETURNONLYFSDIRS, BROWSEINFOW, DefSubclassProc, DragAcceptFiles,
     DragFinish, DragQueryFileW, HDROP, RemoveWindowSubclass, SHBrowseForFolderW,
@@ -48,40 +50,42 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     ACCEL, AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_PUSHBUTTON,
     CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CheckMenuItem, CreateAcceleratorTableW, CreateMenu,
-    CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyAcceleratorTable, DestroyMenu,
-    DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL, ES_NUMBER, EnableMenuItem, FALT, FCONTROL,
-    FSHIFT, FVIRTKEY, GCLP_HICON, GCLP_HICONSM, GWLP_USERDATA, GetClientRect, GetCursorPos,
-    GetMenu, GetMenuBarInfo, GetMenuItemInfoW, GetMessageW, GetParent, GetSystemMetrics,
-    GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON, HMENU,
-    HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL, ICON_SMALL2, IDC_ARROW, IDC_SIZEWE,
-    IDI_APPLICATION, IDNO, IDYES, IMAGE_ICON, KillTimer, LB_ADDSTRING, LB_GETCURSEL,
-    LB_RESETCONTENT, LBN_DBLCLK, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LR_DEFAULTCOLOR, LR_SHARED,
-    LoadCursorW, LoadIconW, LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK,
-    MB_YESNO, MB_YESNOCANCEL, MENUBARINFO, MENUITEMINFOW, MF_BYCOMMAND, MF_CHECKED, MF_ENABLED,
-    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MIIM_STRING, MSG, MessageBoxW,
-    OBJID_MENU, PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON,
-    SW_HIDE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    CreatePopupMenu, CreateWindowExW, DefWindowProcW, DeleteMenu, DestroyAcceleratorTable,
+    DestroyMenu, DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL, ES_NUMBER, EnableMenuItem, FALT,
+    FCONTROL, FSHIFT, FVIRTKEY, GCLP_HICON, GCLP_HICONSM, GWLP_USERDATA, GetClientRect,
+    GetCursorPos, GetMenu, GetMenuBarInfo, GetMenuItemCount, GetMenuItemInfoW, GetMessageW,
+    GetParent, GetSubMenu, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
+    GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON, HMENU, HWND_NOTOPMOST, HWND_TOPMOST,
+    ICON_BIG, ICON_SMALL, ICON_SMALL2, IDC_ARROW, IDC_SIZEWE, IDI_APPLICATION, IDNO, IDYES,
+    IMAGE_ICON, KillTimer, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LBN_DBLCLK,
+    LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW,
+    LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL,
+    MENUBARINFO, MENUITEMINFOW, MF_BYCOMMAND, MF_BYPOSITION, MF_CHECKED, MF_ENABLED, MF_GRAYED,
+    MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MIIM_STRING, MSG, MessageBoxW, OBJID_MENU,
+    PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE,
+    SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
     SYSTEM_METRICS_INDEX, SendMessageW, SetClassLongPtrW, SetCursor, SetTimer, SetWindowLongPtrW,
     SetWindowPos, SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
     TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WM_ACTIVATEAPP,
-    WM_CAPTURECHANGED, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLORBTN,
+    WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLORBTN,
     WM_CTLCOLORDLG, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY,
-    WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT, WM_SETCURSOR,
-    WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS,
-    WS_OVERLAPPEDWINDOW, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP, WM_KEYDOWN,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT,
+    WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CAPTION, WS_CHILD,
+    WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::PWSTR;
 use windows::core::{HSTRING, PCWSTR, w};
 
 use crate::app::document::{self, Document, Eol, TextEncoding};
 use crate::app::session;
-use crate::app::settings::{self, TabPlacement, UiSettings};
+use crate::app::settings::{self, MAX_RECENT_FILES, TabPlacement, UiSettings};
 use crate::commands::copy_full_path::{
     CopyPathKind, can_copy_directory_path, can_copy_filename, can_copy_full_path,
     copy_directory_path, copy_filename, copy_full_path,
 };
 use crate::commands::selection::{can_lowercase, can_uppercase};
+use crate::editor::markdown;
 use crate::editor::scintilla;
 use crate::error::{AppError, Result};
 use crate::logging;
@@ -135,6 +139,21 @@ const CMD_TAB_NEXT: u16 = 349;
 const CMD_TAB_PREV: u16 = 350;
 const CMD_EDITOR_COLLAPSE_SELECTION: u16 = 352;
 const CMD_EDITOR_EXPAND_ALL: u16 = 353;
+// Language (syntax) override commands. CMD_LANG_AUTO clears the per-tab override
+// and falls back to extension detection; the rest force a specific lexer.
+const CMD_LANG_AUTO: u16 = 360;
+const CMD_LANG_PLAIN: u16 = 361;
+const CMD_LANG_MARKDOWN: u16 = 362;
+const CMD_LANG_CPP: u16 = 363;
+const CMD_LANG_JAVASCRIPT: u16 = 364;
+const CMD_LANG_JSON: u16 = 365;
+const CMD_LANG_YAML: u16 = 366;
+const CMD_LANG_POWERSHELL: u16 = 367;
+const CMD_LANG_PYTHON: u16 = 368;
+const CMD_LANG_HTML: u16 = 369;
+const CMD_LANG_XML: u16 = 370;
+const CMD_LANG_CSS: u16 = 371;
+const CMD_LANG_PROPERTIES: u16 = 372;
 const IDM_TAB_CLOSE: u16 = 220;
 const IDM_TAB_CLOSE_OTHERS: u16 = 221;
 const IDM_TAB_CLOSE_RIGHT: u16 = 222;
@@ -142,11 +161,18 @@ const CMD_TAB_DUPLICATE: u16 = 223;
 const CMD_TAB_CLOSE_LEFT: u16 = 224;
 const CMD_EDITOR_DELETE: u16 = 331;
 const IDM_HELP_ABOUT: u16 = 400;
+// Recent-files menu: one command id per slot (700..710), plus a Clear item.
+const IDM_RECENT_FILE_BASE: u16 = 700;
+const IDM_RECENT_CLEAR: u16 = 710;
+// Position of the "Recent Files" submenu inside the File popup (see create_menu).
+const FILE_MENU_RECENT_POS: i32 = 3;
 
 const TIMER_SESSION_ID: usize = 1;
 const TIMER_FIND_RESULTS: usize = 2;
 const TIMER_WORD_COUNT: usize = 3;
 const WORD_COUNT_INTERVAL_MS: u32 = 250;
+const TIMER_MARKDOWN_FOLD: usize = 4;
+const MARKDOWN_FOLD_INTERVAL_MS: u32 = 300;
 const TAB_SPLITTER_WIDTH: i32 = 4;
 const SMART_HL_INDIC: usize = 8;
 const STRIKE_INDIC: usize = 9;
@@ -241,6 +267,9 @@ struct DocTab {
     last_backup_change_counter: Option<u64>,
     smart_highlight_token: Option<String>,
     smart_highlight_truncated: bool,
+    /// Manual syntax override chosen via the Language menu. `None` means the
+    /// lexer is auto-detected from the file extension.
+    lexer_override: Option<scintilla::LexerKind>,
 }
 
 struct SearchState {
@@ -383,6 +412,8 @@ struct AppState {
     icon_small: HICON,
     word_count_pending: bool,
     word_count_timer: bool,
+    markdown_fold_pending: bool,
+    markdown_fold_timer: bool,
     remember_session: bool,
     session_snapshot_periodic_backup: bool,
     backup_interval_seconds: u32,
@@ -588,6 +619,16 @@ fn create_menu() -> Result<HMENU> {
         let file_menu = CreatePopupMenu()?;
         AppendMenuW(file_menu, MF_STRING, IDM_FILE_NEW as usize, w!("New"))?;
         AppendMenuW(file_menu, MF_STRING, IDM_FILE_OPEN as usize, w!("Open..."))?;
+        AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        // Empty popup at FILE_MENU_RECENT_POS; populated by rebuild_recent_files_menu.
+        let recent_menu = CreatePopupMenu()?;
+        AppendMenuW(
+            file_menu,
+            MF_POPUP,
+            recent_menu.0 as usize,
+            w!("Recent Files"),
+        )?;
+        AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(file_menu, MF_STRING, IDM_FILE_SAVE as usize, w!("Save"))?;
         AppendMenuW(
             file_menu,
@@ -783,6 +824,68 @@ fn create_menu() -> Result<HMENU> {
             MF_STRING,
             CMD_VIEW_ALWAYS_ON_TOP as usize,
             w!("Always On Top"),
+        )?;
+        AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        let language_menu = CreatePopupMenu()?;
+        AppendMenuW(
+            language_menu,
+            MF_STRING,
+            CMD_LANG_AUTO as usize,
+            w!("Auto (by extension)"),
+        )?;
+        AppendMenuW(language_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        AppendMenuW(
+            language_menu,
+            MF_STRING,
+            CMD_LANG_PLAIN as usize,
+            w!("Plain Text"),
+        )?;
+        AppendMenuW(
+            language_menu,
+            MF_STRING,
+            CMD_LANG_MARKDOWN as usize,
+            w!("Markdown"),
+        )?;
+        AppendMenuW(
+            language_menu,
+            MF_STRING,
+            CMD_LANG_CPP as usize,
+            w!("C / C++"),
+        )?;
+        AppendMenuW(
+            language_menu,
+            MF_STRING,
+            CMD_LANG_JAVASCRIPT as usize,
+            w!("JavaScript / TypeScript"),
+        )?;
+        AppendMenuW(language_menu, MF_STRING, CMD_LANG_JSON as usize, w!("JSON"))?;
+        AppendMenuW(language_menu, MF_STRING, CMD_LANG_YAML as usize, w!("YAML"))?;
+        AppendMenuW(
+            language_menu,
+            MF_STRING,
+            CMD_LANG_POWERSHELL as usize,
+            w!("PowerShell"),
+        )?;
+        AppendMenuW(
+            language_menu,
+            MF_STRING,
+            CMD_LANG_PYTHON as usize,
+            w!("Python"),
+        )?;
+        AppendMenuW(language_menu, MF_STRING, CMD_LANG_HTML as usize, w!("HTML"))?;
+        AppendMenuW(language_menu, MF_STRING, CMD_LANG_XML as usize, w!("XML"))?;
+        AppendMenuW(language_menu, MF_STRING, CMD_LANG_CSS as usize, w!("CSS"))?;
+        AppendMenuW(
+            language_menu,
+            MF_STRING,
+            CMD_LANG_PROPERTIES as usize,
+            w!("Properties / INI"),
+        )?;
+        AppendMenuW(
+            view_menu,
+            MF_POPUP,
+            language_menu.0 as usize,
+            w!("Language"),
         )?;
         AppendMenuW(menu, MF_POPUP, view_menu.0 as usize, w!("View"))?;
 
@@ -1065,11 +1168,11 @@ fn message_loop(hwnd: HWND, accel: HACCEL) -> Result<()> {
         }
         if message.message == WM_MBUTTONUP
             && let Some(state) = get_state(hwnd)
-            && state.tab_host.placement == TabPlacement::Top
-            && message.hwnd == state.tab_host.top_tabs
+            && (message.hwnd == state.tab_host.top_tabs
+                || message.hwnd == state.tab_host.vertical_tabs)
         {
-            if let Some(index) =
-                tab_index_at_point(state.tab_host.top_tabs, state.docs.len(), message.lParam)
+            let (x, y) = lparam_xy(message.lParam);
+            if let Some((index, _)) = hit_test_tab_at(state, message.hwnd, x, y)
                 && let Err(err) = close_tab(hwnd, state, index)
             {
                 show_error("Rivet error", &err.to_string());
@@ -1261,6 +1364,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_INITMENUPOPUP => {
             if let Some(state) = get_state(hwnd) {
                 update_copy_path_menu(hwnd, state);
+                update_language_menu(hwnd, state);
             }
             LRESULT(0)
         }
@@ -1572,6 +1676,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
+                id if (CMD_LANG_AUTO..=CMD_LANG_PROPERTIES).contains(&id) => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Some(over) = lexer_override_for_command(id)
+                    {
+                        set_language_override(state, over);
+                    }
+                    LRESULT(0)
+                }
                 CMD_VIEW_ALWAYS_ON_TOP => {
                     if let Some(state) = get_state(hwnd) {
                         let enabled = !state.always_on_top;
@@ -1695,6 +1807,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 IDM_HELP_ABOUT => {
                     if let Err(err) = show_about_dialog(hwnd) {
                         show_error("Rivet error", &err.to_string());
+                    }
+                    LRESULT(0)
+                }
+                IDM_RECENT_CLEAR => {
+                    if let Some(state) = get_state(hwnd) {
+                        clear_recent_files(hwnd, state);
+                    }
+                    LRESULT(0)
+                }
+                id if (IDM_RECENT_FILE_BASE..IDM_RECENT_FILE_BASE + MAX_RECENT_FILES as u16)
+                    .contains(&id) =>
+                {
+                    if let Some(state) = get_state(hwnd) {
+                        let slot = (id - IDM_RECENT_FILE_BASE) as usize;
+                        if let Err(err) = open_recent_file(hwnd, state, slot) {
+                            show_error("Rivet error", &err.to_string());
+                        }
                     }
                     LRESULT(0)
                 }
@@ -1834,7 +1963,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                             update_smart_highlight_for_doc(state, index, true);
                         }
                         if let Some(index) = doc_index_by_hwnd(state, nmhdr.hwndFrom) {
-                            recompute_markdown_fold_levels(state, index);
+                            schedule_markdown_fold(hwnd, state, index);
                         }
                         schedule_word_count(hwnd, state);
                         update_status(state);
@@ -1859,6 +1988,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 && let Some(state) = get_state(hwnd)
             {
                 handle_word_count_timer(hwnd, state);
+            } else if wparam.0 == TIMER_MARKDOWN_FOLD
+                && let Some(state) = get_state(hwnd)
+            {
+                handle_markdown_fold_timer(hwnd, state);
             }
             LRESULT(0)
         }
@@ -1902,6 +2035,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let _ = KillTimer(hwnd, TIMER_SESSION_ID);
                 let _ = KillTimer(hwnd, TIMER_FIND_RESULTS);
                 let _ = KillTimer(hwnd, TIMER_WORD_COUNT);
+                let _ = KillTimer(hwnd, TIMER_MARKDOWN_FOLD);
             }
             unsafe {
                 PostQuitMessage(0);
@@ -2087,6 +2221,8 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         return Err(AppError::win32("CreateSolidBrush(VerticalTabs)"));
     }
 
+    // Captured before the struct literal moves `ui_settings` into the state.
+    let editor_dark = ui_settings.editor_dark;
     let state = AppState {
         tab_host: TabStripHost {
             top_tabs,
@@ -2107,13 +2243,15 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         status,
         docs: Vec::new(),
         active: 0,
-        editor_dark: ui_settings.editor_dark,
+        editor_dark,
         next_tab_runtime_id: 1,
         always_on_top: session::DEFAULT_ALWAYS_ON_TOP,
         icon_big,
         icon_small,
         word_count_pending: false,
         word_count_timer: false,
+        markdown_fold_pending: false,
+        markdown_fold_timer: false,
         remember_session: session::DEFAULT_REMEMBER_SESSION,
         session_snapshot_periodic_backup: session::DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP,
         backup_interval_seconds: session::DEFAULT_BACKUP_INTERVAL_SECONDS,
@@ -2163,6 +2301,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     update_wrap_menu(hwnd, &state);
     update_editor_dark_menu(hwnd, state.editor_dark);
     update_always_on_top_menu(hwnd, &state);
+    rebuild_recent_files_menu(hwnd, &state);
 
     unsafe {
         let _ = SetTimer(
@@ -2357,6 +2496,9 @@ fn open_path_new_tab(
     if let Some(caret) = caret {
         let editor = state.docs[index].editor;
         scintilla::goto_pos(editor, caret);
+    }
+    if let Some(opened) = state.docs.get(index).and_then(|d| d.doc.path.clone()) {
+        note_recent_file(hwnd, state, &opened);
     }
     Ok(())
 }
@@ -2577,7 +2719,9 @@ fn update_status(state: &AppState) {
         sel_len = scintilla::selection_end(doc_tab.editor)
             .abs_diff(scintilla::selection_start(doc_tab.editor));
         eol = eol_mode_label(scintilla::get_eol_mode(doc_tab.editor)).to_string();
-        encoding = codepage_label(scintilla::get_codepage(doc_tab.editor));
+        // Scintilla always holds UTF-8 internally, so report the document's
+        // on-disk encoding instead of the buffer codepage.
+        encoding = doc_tab.doc.encoding.label().to_string();
         if doc_tab.doc.is_dirty {
             flags.push('*');
         }
@@ -3697,18 +3841,181 @@ fn module_instance() -> Result<HINSTANCE> {
     Ok(instance)
 }
 
+const EDITOR_SUBCLASS_ID: usize = 1;
+
+thread_local! {
+    /// Set when we handle Enter ourselves on a WM_KEYDOWN so the paired WM_CHAR
+    /// (a `\r` produced by TranslateMessage) can be discarded before Scintilla
+    /// turns it into a second newline.
+    static SWALLOW_ENTER_CHAR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 fn create_editor(parent: HWND, instance: HINSTANCE) -> Result<HWND> {
     let editor = scintilla::create_window(parent, instance)?;
     scintilla::initialize(editor);
+    unsafe {
+        let _ = SetWindowSubclass(editor, Some(editor_subclass_proc), EDITOR_SUBCLASS_ID, 0);
+    }
     Ok(editor)
 }
 
+unsafe extern "system" fn editor_subclass_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id_subclass: usize,
+    _ref_data: usize,
+) -> LRESULT {
+    if msg == WM_KEYDOWN {
+        SWALLOW_ENTER_CHAR.with(|c| c.set(false));
+        if wparam.0 as u32 == VK_RETURN.0 as u32 {
+            let ctrl = unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0;
+            let alt = unsafe { GetKeyState(VK_MENU.0 as i32) } < 0;
+            if !ctrl && !alt && enter_below_collapsed_block(hwnd) {
+                SWALLOW_ENTER_CHAR.with(|c| c.set(true));
+                return LRESULT(0);
+            }
+        }
+    } else if msg == WM_CHAR
+        && SWALLOW_ENTER_CHAR.with(|c| c.replace(false))
+        && (wparam.0 == 0x0D || wparam.0 == 0x0A)
+    {
+        return LRESULT(0);
+    }
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
+/// When the caret sits on a collapsed user-collapse header, Enter would insert
+/// the newline *inside* the hidden region, making the new typing invisible.
+/// Instead, add a fresh visible line just below the whole collapsed block and
+/// put the caret there, leaving the collapse intact. Returns true when handled.
+fn enter_below_collapsed_block(editor: HWND) -> bool {
+    if !scintilla::selection_empty(editor) {
+        return false;
+    }
+    let pos = scintilla::get_current_pos(editor);
+    let line = scintilla::line_from_position(editor, pos);
+    let marker_bit = 1u32 << scintilla::USER_COLLAPSE_MARKER;
+    if scintilla::marker_get(editor, line) & marker_bit == 0 {
+        return false;
+    }
+    let total = scintilla::line_count(editor);
+    // Only act when the block below the header is actually hidden.
+    if line + 1 >= total || scintilla::line_visible(editor, line + 1) {
+        return false;
+    }
+    // Walk to the last hidden line of this block (mirrors expand_user_collapse).
+    let mut last_hidden = line;
+    let mut probe = line + 1;
+    while probe < total {
+        if scintilla::line_visible(editor, probe) {
+            break;
+        }
+        if scintilla::marker_get(editor, probe) & marker_bit != 0 {
+            break;
+        }
+        last_hidden = probe;
+        probe += 1;
+    }
+    let eol = scintilla::eol_string(editor);
+    let after = last_hidden + 1;
+    let caret = if after >= total {
+        // The collapsed block runs to EOF: append a new line at the very end.
+        let end = scintilla::get_length(editor);
+        scintilla::insert_text(editor, end, eol);
+        end + eol.len()
+    } else {
+        // Insert an empty line at the start of the first visible line below the
+        // block. The hidden range (line+1..=last_hidden) is unaffected.
+        let insert_pos = scintilla::position_from_line(editor, after);
+        scintilla::insert_text(editor, insert_pos, eol);
+        insert_pos
+    };
+    // Guard against the new line inheriting the hidden flag of its neighbor.
+    let caret_line = scintilla::line_from_position(editor, caret);
+    if !scintilla::line_visible(editor, caret_line) {
+        scintilla::show_lines(editor, caret_line, caret_line);
+    }
+    scintilla::goto_pos(editor, caret);
+    true
+}
+
+/// The lexer actually used for a tab: a manual Language-menu override when set,
+/// otherwise extension-based detection. Large File Mode always wins with Null to
+/// keep highlighting off the hot path.
+fn effective_lexer(doc_tab: &DocTab) -> scintilla::LexerKind {
+    if doc_tab.doc.large_file_mode {
+        return scintilla::LexerKind::Null;
+    }
+    doc_tab
+        .lexer_override
+        .unwrap_or_else(|| lexer_for_doc(&doc_tab.doc))
+}
+
 fn apply_syntax_for_doc(doc_tab: &DocTab, dark: bool) {
-    let lexer = lexer_for_doc(&doc_tab.doc);
+    let lexer = effective_lexer(doc_tab);
     scintilla::apply_lexer(doc_tab.editor, lexer, dark);
     apply_editor_theme_overlays(doc_tab.editor, dark);
     if matches!(lexer, scintilla::LexerKind::Markdown) && !doc_tab.doc.large_file_mode {
         apply_markdown_fold_levels(doc_tab.editor);
+    }
+}
+
+/// Applies a Language-menu choice to the active tab and re-highlights it.
+/// `over` is `None` for "Auto (by extension)" or `Some(kind)` to force a lexer.
+fn set_language_override(state: &mut AppState, over: Option<scintilla::LexerKind>) {
+    let index = state.active;
+    let dark = state.editor_dark;
+    let Some(doc_tab) = state.docs.get_mut(index) else {
+        return;
+    };
+    if doc_tab.lexer_override == over {
+        return;
+    }
+    doc_tab.lexer_override = over;
+    apply_syntax_for_doc(doc_tab, dark);
+}
+
+/// Maps a Language-menu command id to the override it selects: `Some(None)` for
+/// Auto, `Some(Some(kind))` for a specific lexer, `None` if not a language id.
+fn lexer_override_for_command(id: u16) -> Option<Option<scintilla::LexerKind>> {
+    use scintilla::LexerKind as K;
+    let kind = match id {
+        CMD_LANG_AUTO => return Some(None),
+        CMD_LANG_PLAIN => K::Null,
+        CMD_LANG_MARKDOWN => K::Markdown,
+        CMD_LANG_CPP => K::Cpp,
+        CMD_LANG_JAVASCRIPT => K::JavaScript,
+        CMD_LANG_JSON => K::Json,
+        CMD_LANG_YAML => K::Yaml,
+        CMD_LANG_POWERSHELL => K::PowerShell,
+        CMD_LANG_PYTHON => K::Python,
+        CMD_LANG_HTML => K::Html,
+        CMD_LANG_XML => K::Xml,
+        CMD_LANG_CSS => K::Css,
+        CMD_LANG_PROPERTIES => K::Properties,
+        _ => return None,
+    };
+    Some(Some(kind))
+}
+
+/// The Language-menu command id that represents a forced lexer kind.
+fn command_for_lexer_kind(kind: scintilla::LexerKind) -> u16 {
+    use scintilla::LexerKind as K;
+    match kind {
+        K::Null => CMD_LANG_PLAIN,
+        K::Markdown => CMD_LANG_MARKDOWN,
+        K::Cpp => CMD_LANG_CPP,
+        K::JavaScript => CMD_LANG_JAVASCRIPT,
+        K::Json => CMD_LANG_JSON,
+        K::Yaml => CMD_LANG_YAML,
+        K::PowerShell => CMD_LANG_POWERSHELL,
+        K::Python => CMD_LANG_PYTHON,
+        K::Html => CMD_LANG_HTML,
+        K::Xml => CMD_LANG_XML,
+        K::Css => CMD_LANG_CSS,
+        K::Properties => CMD_LANG_PROPERTIES,
     }
 }
 
@@ -3719,15 +4026,46 @@ fn recompute_markdown_fold_levels(state: &AppState, index: usize) {
     if doc_tab.doc.large_file_mode {
         return;
     }
-    if !matches!(lexer_for_doc(&doc_tab.doc), scintilla::LexerKind::Markdown) {
+    if !matches!(effective_lexer(doc_tab), scintilla::LexerKind::Markdown) {
         return;
     }
     apply_markdown_fold_levels(doc_tab.editor);
 }
 
+/// Debounce a markdown fold recompute. Recomputing on every keystroke walks
+/// the whole document, so we coalesce edits behind a short timer and only act
+/// on the active doc once typing settles.
+fn schedule_markdown_fold(hwnd: HWND, state: &mut AppState, index: usize) {
+    let is_markdown = state.docs.get(index).is_some_and(|doc_tab| {
+        !doc_tab.doc.large_file_mode
+            && matches!(effective_lexer(doc_tab), scintilla::LexerKind::Markdown)
+    });
+    if !is_markdown {
+        return;
+    }
+    state.markdown_fold_pending = true;
+    if !state.markdown_fold_timer {
+        unsafe {
+            let _ = SetTimer(hwnd, TIMER_MARKDOWN_FOLD, MARKDOWN_FOLD_INTERVAL_MS, None);
+        }
+        state.markdown_fold_timer = true;
+    }
+}
+
+fn handle_markdown_fold_timer(hwnd: HWND, state: &mut AppState) {
+    if state.markdown_fold_pending {
+        state.markdown_fold_pending = false;
+        recompute_markdown_fold_levels(state, state.active);
+    }
+    if state.markdown_fold_timer && !state.markdown_fold_pending {
+        unsafe {
+            let _ = KillTimer(hwnd, TIMER_MARKDOWN_FOLD);
+        }
+        state.markdown_fold_timer = false;
+    }
+}
+
 fn apply_markdown_fold_levels(editor: HWND) {
-    const BASE: u32 = 0x400;
-    const HEADER: u32 = 0x2000;
     let text = match scintilla::get_text(editor) {
         Ok(t) => t,
         Err(_) => return,
@@ -3736,30 +4074,17 @@ fn apply_markdown_fold_levels(editor: HWND) {
     if line_count == 0 {
         return;
     }
-    let mut current_depth: u32 = 0;
-    for (line_idx, line) in text.split('\n').enumerate() {
+    // Only write lines whose level actually changed — the lexer doesn't fold
+    // markdown, so the stored level is exactly what we last set, and avoiding
+    // redundant SCI_SETFOLDLEVEL keeps the debounced recompute cheap.
+    let levels = markdown::compute_fold_levels(&text);
+    for (line_idx, &level) in levels.iter().enumerate() {
         if line_idx >= line_count {
             break;
         }
-        let trimmed = line.trim_start_matches([' ', '\t']);
-        let heading_depth = if trimmed.starts_with('#') {
-            let hashes = trimmed.bytes().take_while(|&b| b == b'#').count();
-            let after = trimmed.as_bytes().get(hashes).copied();
-            if (1..=6).contains(&hashes) && matches!(after, Some(b' ') | Some(b'\t') | None) {
-                Some(hashes as u32)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        let level = if let Some(depth) = heading_depth {
-            current_depth = depth;
-            (BASE + depth - 1) | HEADER
-        } else {
-            BASE + current_depth
-        };
-        scintilla::set_fold_level(editor, line_idx, level);
+        if scintilla::fold_level(editor, line_idx) != level {
+            scintilla::set_fold_level(editor, line_idx, level);
+        }
     }
 }
 
@@ -3867,6 +4192,7 @@ fn create_doc_from_path(
         last_backup_change_counter: None,
         smart_highlight_token: None,
         smart_highlight_truncated: false,
+        lexer_override: None,
     };
     load_file_into_doc(
         &mut doc_tab,
@@ -3941,6 +4267,7 @@ fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Re
         last_backup_change_counter: None,
         smart_highlight_token: None,
         smart_highlight_truncated: false,
+        lexer_override: None,
     };
     scintilla::set_eol_mode(editor, doc_tab.doc.eol);
     scintilla::set_wrap_enabled(editor, state.word_wrap_enabled);
@@ -4000,6 +4327,7 @@ fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
         last_backup_change_counter: None,
         smart_highlight_token: None,
         smart_highlight_truncated: false,
+        lexer_override: None,
     };
     apply_syntax_for_doc(&doc_tab, state.editor_dark);
     restore_strike_ranges(doc_tab.editor, &strike_ranges);
@@ -4656,26 +4984,6 @@ unsafe extern "system" fn status_bar_subclass_proc(
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
 
-fn tab_index_at_point(tabs: HWND, count: usize, point: LPARAM) -> Option<usize> {
-    let x = lparam_x(point);
-    let y = lparam_y(point);
-    let mut rect = windows::Win32::Foundation::RECT::default();
-    for index in 0..count {
-        let result = unsafe {
-            SendMessageW(
-                tabs,
-                TCM_GETITEMRECT,
-                WPARAM(index),
-                LPARAM(&mut rect as *mut _ as isize),
-            )
-        };
-        if result.0 != 0 && x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom {
-            return Some(index);
-        }
-    }
-    None
-}
-
 fn doc_index_by_hwnd(state: &AppState, hwnd: HWND) -> Option<usize> {
     state.docs.iter().position(|doc| doc.editor == hwnd)
 }
@@ -5024,6 +5332,7 @@ fn restore_session_entry(
         },
         smart_highlight_token: None,
         smart_highlight_truncated: false,
+        lexer_override: None,
     };
     if doc_tab.doc.path.is_none() {
         update_next_untitled_index_from_name(state, &doc_tab.doc.display_name);
@@ -5168,15 +5477,6 @@ fn ensure_doc_backup_path(doc: &mut Document) -> Result<()> {
 
 fn unix_millis_to_system_time(value: u64) -> SystemTime {
     UNIX_EPOCH + Duration::from_millis(value)
-}
-
-fn codepage_label(codepage: i32) -> String {
-    match codepage {
-        65001 => "UTF-8".to_string(),
-        1200 => "UTF-16 LE".to_string(),
-        1201 => "UTF-16 BE".to_string(),
-        value => format!("CP-{value}"),
-    }
 }
 
 fn eol_mode_label(mode: i32) -> &'static str {
@@ -5709,8 +6009,95 @@ fn scale_for_dpi(hwnd: HWND, value: i32) -> i32 {
     value.saturating_mul(dpi).div_euclid(96)
 }
 
+/// Locate the (initially empty) "Recent Files" popup inside the File menu.
+fn recent_files_submenu(hwnd: HWND) -> Option<HMENU> {
+    let bar = unsafe { GetMenu(hwnd) };
+    if bar.0 == 0 {
+        return None;
+    }
+    // File is the first top-level popup; Recent Files sits at FILE_MENU_RECENT_POS.
+    let file_menu = unsafe { GetSubMenu(bar, 0) };
+    if file_menu.0 == 0 {
+        return None;
+    }
+    let recent = unsafe { GetSubMenu(file_menu, FILE_MENU_RECENT_POS) };
+    if recent.0 == 0 { None } else { Some(recent) }
+}
+
+/// Rewrite the Recent Files submenu from `state.ui_settings.recent_files`.
+fn rebuild_recent_files_menu(hwnd: HWND, state: &AppState) {
+    let Some(menu) = recent_files_submenu(hwnd) else {
+        return;
+    };
+    unsafe {
+        for _ in 0..GetMenuItemCount(menu) {
+            let _ = DeleteMenu(menu, 0, MF_BYPOSITION);
+        }
+    }
+    let recent = &state.ui_settings.recent_files;
+    if recent.is_empty() {
+        unsafe {
+            let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, w!("(empty)"));
+        }
+        return;
+    }
+    for (i, path) in recent.iter().take(MAX_RECENT_FILES).enumerate() {
+        // 1-based accelerator digit (10th item is "0"); '&' in paths must be escaped.
+        let label = format!("&{} {}", (i + 1) % 10, path.replace('&', "&&"));
+        let wide: Vec<u16> = label.encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING,
+                IDM_RECENT_FILE_BASE as usize + i,
+                PCWSTR(wide.as_ptr()),
+            );
+        }
+    }
+    unsafe {
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            IDM_RECENT_CLEAR as usize,
+            w!("Clear Recent Files"),
+        );
+    }
+}
+
+/// Record a freshly opened path in the MRU list and refresh the menu.
+fn note_recent_file(hwnd: HWND, state: &mut AppState, path: &Path) {
+    state
+        .ui_settings
+        .push_recent(path.to_string_lossy().into_owned());
+    persist_ui_settings(state);
+    rebuild_recent_files_menu(hwnd, state);
+}
+
+fn clear_recent_files(hwnd: HWND, state: &mut AppState) {
+    state.ui_settings.recent_files.clear();
+    persist_ui_settings(state);
+    rebuild_recent_files_menu(hwnd, state);
+}
+
+fn open_recent_file(hwnd: HWND, state: &mut AppState, slot: usize) -> Result<()> {
+    let Some(path_str) = state.ui_settings.recent_files.get(slot).cloned() else {
+        return Ok(());
+    };
+    let path = PathBuf::from(&path_str);
+    if !path.exists() {
+        // Drop the stale entry, refresh the menu, then report it.
+        state.ui_settings.recent_files.retain(|p| p != &path_str);
+        persist_ui_settings(state);
+        rebuild_recent_files_menu(hwnd, state);
+        return Err(AppError::new(format!("File no longer exists:\n{path_str}")));
+    }
+    // open_path_new_tab records the MRU entry and refreshes the menu on success.
+    open_path_new_tab(hwnd, state, path, None, None, None, None)
+}
+
 fn persist_ui_settings(state: &AppState) {
-    let mut settings = state.ui_settings;
+    let mut settings = state.ui_settings.clone();
     settings.tab_placement = state.tab_host.placement;
     settings.vertical_tab_width_px = state.tab_host.vertical_width_px;
     settings.editor_dark = state.editor_dark;
@@ -6279,6 +6666,22 @@ fn update_always_on_top_menu(hwnd: HWND, state: &AppState) {
         return;
     }
     set_menu_check(menu, CMD_VIEW_ALWAYS_ON_TOP, state.always_on_top);
+}
+
+/// Checks the Language-menu item matching the active tab's lexer: "Auto" when no
+/// override is set, otherwise the forced language.
+fn update_language_menu(hwnd: HWND, state: &AppState) {
+    let menu = unsafe { GetMenu(hwnd) };
+    if menu.0 == 0 {
+        return;
+    }
+    let checked = match state.docs.get(state.active).and_then(|d| d.lexer_override) {
+        None => CMD_LANG_AUTO,
+        Some(kind) => command_for_lexer_kind(kind),
+    };
+    for id in CMD_LANG_AUTO..=CMD_LANG_PROPERTIES {
+        set_menu_check(menu, id, id == checked);
+    }
 }
 
 fn set_menu_check(menu: HMENU, id: u16, checked: bool) {
@@ -7458,6 +7861,33 @@ mod tests {
 
         doc.large_file_mode = true;
         assert_eq!(lexer_for_doc(&doc), scintilla::LexerKind::Null);
+    }
+
+    #[test]
+    fn language_command_override_roundtrip() {
+        use scintilla::LexerKind as K;
+        // "Auto" clears the per-tab override.
+        assert_eq!(lexer_override_for_command(CMD_LANG_AUTO), Some(None));
+        // Every lexer kind round-trips through its menu command.
+        for kind in [
+            K::Null,
+            K::Cpp,
+            K::JavaScript,
+            K::Json,
+            K::Yaml,
+            K::PowerShell,
+            K::Python,
+            K::Html,
+            K::Xml,
+            K::Css,
+            K::Properties,
+            K::Markdown,
+        ] {
+            let cmd = command_for_lexer_kind(kind);
+            assert_eq!(lexer_override_for_command(cmd), Some(Some(kind)));
+        }
+        // Non-language command ids are rejected.
+        assert_eq!(lexer_override_for_command(IDM_FILE_NEW), None);
     }
 
     #[test]

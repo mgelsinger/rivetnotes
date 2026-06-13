@@ -132,6 +132,7 @@ fn main() {
         "LexCSS.cxx",
         "LexHTML.cxx",
         "LexJSON.cxx",
+        "LexMarkdown.cxx",
         "LexNull.cxx",
         "LexPowerShell.cxx",
         "LexProps.cxx",

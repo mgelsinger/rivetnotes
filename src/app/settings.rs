@@ -20,6 +20,7 @@ pub const MIN_LARGE_FILE_THRESHOLD_MB: u32 = 1;
 pub const MAX_LARGE_FILE_THRESHOLD_MB: u32 = 1024;
 pub const DEFAULT_LARGE_FILE_DISABLE_WORD_WRAP: bool = true;
 pub const DEFAULT_LARGE_FILE_DISABLE_SMART_HIGHLIGHT: bool = true;
+pub const MAX_RECENT_FILES: usize = 10;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -40,7 +41,7 @@ impl TabPlacement {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct UiSettings {
     #[serde(default)]
     pub tab_placement: TabPlacement,
@@ -61,6 +62,9 @@ pub struct UiSettings {
     pub large_file_disable_word_wrap: bool,
     /// `settings.json`: when true, Large File Mode suppresses smart highlight for that tab.
     pub large_file_disable_smart_highlight: bool,
+    /// `settings.json`: most-recently-opened file paths, newest first.
+    #[serde(default)]
+    pub recent_files: Vec<String>,
 }
 
 impl Default for UiSettings {
@@ -75,6 +79,7 @@ impl Default for UiSettings {
             large_file_threshold_mb: DEFAULT_LARGE_FILE_THRESHOLD_MB,
             large_file_disable_word_wrap: DEFAULT_LARGE_FILE_DISABLE_WORD_WRAP,
             large_file_disable_smart_highlight: DEFAULT_LARGE_FILE_DISABLE_SMART_HIGHLIGHT,
+            recent_files: Vec::new(),
         }
     }
 }
@@ -103,6 +108,8 @@ struct UiSettingsWire {
     large_file_disable_smart_highlight: Option<bool>,
     #[serde(default)]
     large_file_allow_smart_highlight: Option<bool>,
+    #[serde(default)]
+    recent_files: Vec<String>,
 }
 
 impl From<UiSettingsWire> for UiSettings {
@@ -123,6 +130,7 @@ impl From<UiSettingsWire> for UiSettings {
                 .large_file_disable_smart_highlight
                 .or_else(|| value.large_file_allow_smart_highlight.map(|allow| !allow))
                 .unwrap_or(DEFAULT_LARGE_FILE_DISABLE_SMART_HIGHLIGHT),
+            recent_files: value.recent_files,
         }
     }
 }
@@ -137,6 +145,14 @@ impl<'de> Deserialize<'de> for UiSettings {
 }
 
 impl UiSettings {
+    /// Insert `path` at the front of the recent-files list, removing any
+    /// case-insensitive duplicate and capping the list at [`MAX_RECENT_FILES`].
+    pub fn push_recent(&mut self, path: String) {
+        self.recent_files.retain(|p| !p.eq_ignore_ascii_case(&path));
+        self.recent_files.insert(0, path);
+        self.recent_files.truncate(MAX_RECENT_FILES);
+    }
+
     fn normalized(mut self) -> Self {
         self.vertical_tab_width_px = self
             .vertical_tab_width_px
@@ -144,6 +160,7 @@ impl UiSettings {
         self.large_file_threshold_mb = self
             .large_file_threshold_mb
             .clamp(MIN_LARGE_FILE_THRESHOLD_MB, MAX_LARGE_FILE_THRESHOLD_MB);
+        self.recent_files.truncate(MAX_RECENT_FILES);
         self
     }
 }
@@ -168,7 +185,7 @@ pub fn load_settings() -> Result<UiSettings> {
 pub fn save_settings(settings: &UiSettings) -> Result<()> {
     ensure_settings_dir()?;
     let path = settings_file_path()?;
-    atomic_write_json(&path, &settings.normalized())
+    atomic_write_json(&path, &settings.clone().normalized())
         .map_err(|err| AppError::new(format!("Failed to write settings file atomically: {err}")))
 }
 
@@ -248,6 +265,30 @@ mod tests {
     }
 
     #[test]
+    fn push_recent_dedupes_and_moves_to_front() {
+        let mut settings = UiSettings::default();
+        settings.push_recent("C:\\a.txt".to_string());
+        settings.push_recent("C:\\b.txt".to_string());
+        // Re-opening 'a' (different case) moves it to the front without a dup.
+        settings.push_recent("c:\\A.TXT".to_string());
+        assert_eq!(settings.recent_files, vec!["c:\\A.TXT", "C:\\b.txt"]);
+    }
+
+    #[test]
+    fn push_recent_caps_at_max() {
+        let mut settings = UiSettings::default();
+        for i in 0..(MAX_RECENT_FILES + 5) {
+            settings.push_recent(format!("C:\\file{i}.txt"));
+        }
+        assert_eq!(settings.recent_files.len(), MAX_RECENT_FILES);
+        // Newest is first.
+        assert_eq!(
+            settings.recent_files[0],
+            format!("C:\\file{}.txt", MAX_RECENT_FILES + 4)
+        );
+    }
+
+    #[test]
     fn tab_placement_cycles() {
         assert_eq!(TabPlacement::Top.next(), TabPlacement::Left);
         assert_eq!(TabPlacement::Left.next(), TabPlacement::Right);
@@ -295,9 +336,11 @@ mod tests {
             large_file_threshold_mb: 50,
             large_file_disable_word_wrap: true,
             large_file_disable_smart_highlight: true,
+            recent_files: vec!["C:\\a.txt".to_string(), "C:\\b.md".to_string()],
         };
         let json = serde_json::to_string_pretty(&settings).unwrap();
         assert!(json.contains("\"tab_placement\": \"right\""));
+        assert!(json.contains("\"recent_files\""));
         assert!(json.contains("\"vertical_tab_width_px\": 320"));
         assert!(json.contains("\"editor_dark\": false"));
         assert!(json.contains("\"smart_highlight_enabled\": false"));

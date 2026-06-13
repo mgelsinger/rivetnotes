@@ -28,6 +28,7 @@ extern const LexerModule lmCPP;
 extern const LexerModule lmCss;
 extern const LexerModule lmHTML;
 extern const LexerModule lmJSON;
+extern const LexerModule lmMarkdown;
 extern const LexerModule lmNull;
 extern const LexerModule lmPowerShell;
 extern const LexerModule lmProps;
@@ -55,6 +56,7 @@ void AddEachLexer() {
         &lmXML,
         &lmCss,
         &lmCPP,
+        &lmMarkdown,
     });
 }
 

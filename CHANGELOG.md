@@ -7,6 +7,79 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 - TBD.
 
+## [0.4.18] - 2026-06-13
+
+### Markdown & syntax
+
+- **Language menu (manual syntax override).** A new **View → Language**
+  submenu lets you force a lexer per tab — including on an unsaved **Untitled**
+  buffer — so Markdown highlighting (bold `#` headings, `**bold**`, etc.) no
+  longer requires saving the file as `.md` first. *Auto (by extension)* remains
+  the default and is restorable at any time; the active tab's language is
+  check-marked. Large File Mode still suppresses highlighting.
+
+### Editing
+
+- **Enter on a collapsed block no longer types into hidden text.** When the
+  caret is on a collapsed user-collapse header, pressing Enter now inserts a
+  new **visible** line *below* the whole collapsed region (caret placed there)
+  and leaves the collapse intact, instead of inserting an invisible line inside
+  the hidden range. Plain Enter only; Ctrl/Alt+Enter and multi-line selections
+  are untouched.
+
+### Known issues
+
+- Markdown ATX (`#`) heading highlighting still looks slightly off and needs
+  style refinement.
+- In dark mode the selected tab renders blue rather than a dark-theme color.
+
+## [0.4.17] - 2026-06-12
+
+### Markdown (priority)
+
+- **Markdown files are now syntax-highlighted.** The vendored Lexilla
+  `LexMarkdown` lexer was present but neither compiled nor registered;
+  `LexerKind::Markdown` mapped to the `null` lexer, so `.md`/`.markdown`
+  files rendered as plain text. Added `LexMarkdown.cxx` to `build.rs`,
+  registered `lmMarkdown` in `LexillaMinimal.cxx`, mapped the lexer name to
+  `"markdown"`, and added light/dark styles for headings (bold), strong/
+  emphasis, lists, blockquotes, links (underlined), strikeout, and code
+  spans/blocks.
+- **Heading folds are now correct and cheap.** Fold-level computation moved
+  to a pure, unit-tested module (`editor/markdown.rs`) that:
+  - ignores `#` lines inside fenced (` ``` ` / `~~~`) and indented code
+    blocks, so comments-in-code no longer create bogus fold points;
+  - enforces the CommonMark "at most 3 leading spaces" rule for ATX
+    headings and accepts a trailing `\r`;
+  - is applied on a **debounced timer** instead of on every keystroke, and
+    only writes the lines whose fold level actually changed. The previous
+    code walked and rewrote the whole document on each edit.
+
+### Editing & files
+
+- **Legacy ANSI files open instead of erroring.** Files that are neither
+  valid UTF-8 nor BOM-tagged UTF-16 now decode as Windows-1252 (`ANSI`)
+  rather than failing with "Unsupported encoding". `Ctrl+S` preserves the
+  ANSI encoding; saving a character CP1252 cannot represent reports a clear
+  error pointing at `Save As` (which writes UTF-8). The full 0x00–0xFF byte
+  range round-trips.
+- **The status bar now reports the document's real encoding.** It previously
+  read Scintilla's buffer codepage, which is always UTF-8 — so UTF-16 files
+  were mislabeled "UTF-8". It now shows UTF-8 / UTF-8 BOM / UTF-16 LE /
+  UTF-16 BE / ANSI from the document itself.
+
+### UI
+
+- **New `File → Recent Files` menu (MRU).** Up to 10 most-recently-opened
+  paths, newest first, persisted in `settings.json`, with numeric
+  accelerators and a `Clear Recent Files` item. Stale entries are pruned
+  (with a notice) when clicked. Populated from the Open dialog, drag-drop,
+  and Find-in-Files hits — not from session restore.
+- **Middle-click now closes vertical tabs too.** The middle-click-to-close
+  intercept previously fired only on the Top tab strip; it now works on the
+  Left/Right vertical tab strip as well, sharing the same hit-test path as
+  the close `×`.
+
 ## [0.4.16] - 2026-05-15
 
 - Killed the click-flash on the Left / Right vertical tab strip. When you

@@ -11,6 +11,22 @@ pub enum TextEncoding {
     Utf8Bom,
     Utf16Le,
     Utf16Be,
+    /// Windows-1252 ("ANSI"). The fallback for legacy files that are neither
+    /// valid UTF-8 nor BOM-tagged UTF-16.
+    Ansi,
+}
+
+impl TextEncoding {
+    /// Short label for the status bar.
+    pub fn label(self) -> &'static str {
+        match self {
+            TextEncoding::Utf8 => "UTF-8",
+            TextEncoding::Utf8Bom => "UTF-8 BOM",
+            TextEncoding::Utf16Le => "UTF-16 LE",
+            TextEncoding::Utf16Be => "UTF-16 BE",
+            TextEncoding::Ansi => "ANSI",
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -122,6 +138,9 @@ pub fn encoded_size_for_text(text: &str, encoding: TextEncoding) -> u64 {
         TextEncoding::Utf16Le | TextEncoding::Utf16Be => {
             2 + (text.encode_utf16().count() as u64).saturating_mul(2)
         }
+        // One byte per char when representable; an upper-bound estimate that
+        // matches the real size for any text that can actually be saved as ANSI.
+        TextEncoding::Ansi => text.chars().count() as u64,
     }
 }
 
@@ -189,9 +208,52 @@ pub fn decode_bytes(bytes: &[u8]) -> Result<(String, TextEncoding)> {
         return decode_utf16(&bytes[2..], false).map(|text| (text, TextEncoding::Utf16Be));
     }
 
-    let text = std::str::from_utf8(bytes)
-        .map_err(|err| AppError::new(format!("Unsupported encoding (not UTF-8): {err}")))?;
-    Ok((text.to_string(), TextEncoding::Utf8))
+    // No BOM: prefer UTF-8, but fall back to Windows-1252 so legacy ANSI files
+    // open instead of erroring. CP1252 maps every byte, so this never fails.
+    match std::str::from_utf8(bytes) {
+        Ok(text) => Ok((text.to_string(), TextEncoding::Utf8)),
+        Err(_) => Ok((decode_cp1252(bytes), TextEncoding::Ansi)),
+    }
+}
+
+/// Windows-1252 mappings for bytes 0x80–0x9F. The five positions undefined in
+/// CP1252 (0x81, 0x8D, 0x8F, 0x90, 0x9D) map to the matching C1 control code
+/// point so decoding is lossless and reversible.
+const CP1252_HIGH: [u16; 32] = [
+    0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039,
+    0x0152, 0x008D, 0x017D, 0x008F, 0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+    0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178,
+];
+
+fn decode_cp1252(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len());
+    for &b in bytes {
+        let code = match b {
+            0x80..=0x9F => CP1252_HIGH[(b - 0x80) as usize] as u32,
+            other => other as u32,
+        };
+        // Every mapped value is a valid non-surrogate scalar.
+        out.push(char::from_u32(code).unwrap_or('\u{FFFD}'));
+    }
+    out
+}
+
+fn encode_cp1252(text: &str) -> Result<Vec<u8>> {
+    let mut out = Vec::with_capacity(text.len());
+    for ch in text.chars() {
+        let code = ch as u32;
+        let byte = if code <= 0x7F || (0xA0..=0xFF).contains(&code) {
+            code as u8
+        } else if let Some(idx) = CP1252_HIGH.iter().position(|&c| u32::from(c) == code) {
+            0x80 + idx as u8
+        } else {
+            return Err(AppError::new(format!(
+                "Character '{ch}' (U+{code:04X}) cannot be saved as ANSI. Use Save As (UTF-8)."
+            )));
+        };
+        out.push(byte);
+    }
+    Ok(out)
 }
 
 pub fn encode_text(text: &str, encoding: TextEncoding) -> Result<Vec<u8>> {
@@ -204,6 +266,7 @@ pub fn encode_text(text: &str, encoding: TextEncoding) -> Result<Vec<u8>> {
         }
         TextEncoding::Utf16Le => Ok(encode_utf16(text, true)),
         TextEncoding::Utf16Be => Ok(encode_utf16(text, false)),
+        TextEncoding::Ansi => encode_cp1252(text),
     }
 }
 
@@ -330,6 +393,41 @@ mod tests {
     fn decode_utf16_invalid_length() {
         let bytes = [0xFF, 0xFE, 0x00];
         assert!(decode_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn non_utf8_bytes_fall_back_to_ansi() {
+        // 0xE9 is 'é' in Windows-1252 but an invalid lone UTF-8 lead byte.
+        let bytes = [b'c', b'a', b'f', b'\xE9'];
+        let (decoded, encoding) = decode_bytes(&bytes).unwrap();
+        assert_eq!(encoding, TextEncoding::Ansi);
+        assert_eq!(decoded, "café");
+    }
+
+    #[test]
+    fn ansi_roundtrips_smart_punctuation() {
+        // “quoted” — em dash, smart quotes, euro, trademark all live in 0x80–0x9F.
+        let text = "\u{201C}quoted\u{201D} \u{2014} \u{20AC}99 \u{2122}";
+        let bytes = encode_text(text, TextEncoding::Ansi).unwrap();
+        // Each character is exactly one CP1252 byte.
+        assert_eq!(bytes.len(), text.chars().count());
+        let (decoded, encoding) = decode_bytes(&bytes).unwrap();
+        assert_eq!(encoding, TextEncoding::Ansi);
+        assert_eq!(decoded, text);
+    }
+
+    #[test]
+    fn ansi_encode_rejects_unrepresentable_char() {
+        // An emoji has no CP1252 byte; saving as ANSI must fail loudly.
+        assert!(encode_text("hi \u{1F600}", TextEncoding::Ansi).is_err());
+    }
+
+    #[test]
+    fn ansi_full_byte_range_roundtrips() {
+        let bytes: Vec<u8> = (0u8..=255).collect();
+        let decoded = decode_cp1252(&bytes);
+        let reencoded = encode_cp1252(&decoded).unwrap();
+        assert_eq!(reencoded, bytes);
     }
 
     #[test]
