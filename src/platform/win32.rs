@@ -1430,7 +1430,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         WM_SIZE => {
-            if let Some(state) = get_state(hwnd) {
+            if let Some(state) = get_state(hwnd)
+                && !unsafe { IsIconic(hwnd) }.as_bool()
+            {
                 layout_children(hwnd, state);
             }
             LRESULT(0)
