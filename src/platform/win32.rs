@@ -1251,7 +1251,8 @@ fn create_accelerators() -> Result<HACCEL> {
             key: VK_PRIOR,
             cmd: CMD_TAB_PREV,
         },
-    ];
+    ]
+    .to_vec();
 
     let accel = unsafe { CreateAcceleratorTableW(&accels)? };
     Ok(accel)
