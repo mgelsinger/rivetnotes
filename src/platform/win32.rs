@@ -5328,7 +5328,7 @@ fn close_tab(hwnd: HWND, state: &mut AppState, index: usize) -> Result<bool> {
 
     let should_close = {
         let doc_tab = &state.docs[index];
-        if !state.session_snapshot_periodic_backup && doc_tab.doc.is_dirty {
+        if doc_tab.doc.is_dirty {
             match prompt_save_changes(hwnd, doc_tab) {
                 SaveChoice::Yes => match save_document_at(hwnd, state, index, None, false) {
                     Ok(true) => true,
