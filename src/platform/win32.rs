@@ -18,6 +18,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::UI::Controls::Dialogs::{
     CommDlgExtendedError, GetOpenFileNameW, GetSaveFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST,
     OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
@@ -128,6 +129,7 @@ const IDM_EDIT_REPLACE: u16 = 323;
 const IDM_EDIT_REPLACE_ALL: u16 = 324;
 const IDM_EDIT_FIND_IN_FILES: u16 = 325;
 const IDM_EDIT_GOTO_LINE: u16 = 332;
+const IDM_EDIT_INSERT_DATETIME: u16 = 333;
 const CMD_TRANSFORM_UPPERCASE: u16 = 326;
 const CMD_TRANSFORM_LOWERCASE: u16 = 327;
 const CMD_COPY_FULL_PATH: u16 = 328;
@@ -209,6 +211,7 @@ const VK_X: u16 = 0x58;
 const VK_Y: u16 = 0x59;
 const VK_Z: u16 = 0x5A;
 const VK_F3: u16 = 0x72;
+const VK_F5: u16 = 0x74;
 const VK_N: u16 = 0x4E;
 const VK_S: u16 = 0x53;
 const VK_OEM_4: u16 = 0xDB;
@@ -433,7 +436,6 @@ struct AppState {
     session_snapshot_periodic_backup: bool,
     backup_interval_seconds: u32,
     word_wrap_enabled: bool,
-    next_untitled_index: usize,
     search_state: SearchState,
     search_dialog_mode: SearchDialogMode,
     find_dialog: Option<FindDialogState>,
@@ -839,6 +841,13 @@ fn create_menu() -> Result<HMENU> {
             CMD_TRIM_LEADING_TRAILING as usize,
             w!("Trim Leading + Trailing Whitespace"),
         )?;
+        AppendMenuW(edit_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        AppendMenuW(
+            edit_menu,
+            MF_STRING,
+            IDM_EDIT_INSERT_DATETIME as usize,
+            w!("Insert Date/Time"),
+        )?;
         AppendMenuW(menu, MF_POPUP, edit_menu.0 as usize, w!("Edit"))?;
 
         let view_menu = CreatePopupMenu()?;
@@ -1115,6 +1124,11 @@ fn create_accelerators() -> Result<HACCEL> {
             fVirt: FVIRTKEY | FCONTROL,
             key: VK_G,
             cmd: IDM_EDIT_GOTO_LINE,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY,
+            key: VK_F5,
+            cmd: IDM_EDIT_INSERT_DATETIME,
         },
         ACCEL {
             fVirt: FVIRTKEY | FCONTROL,
@@ -1550,6 +1564,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                         && let Err(err) = show_find_in_files_dialog(hwnd, state)
                     {
                         show_error("Rivet error", &err.to_string());
+                    }
+                    LRESULT(0)
+                }
+                IDM_EDIT_INSERT_DATETIME => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Some(editor) = active_editor(state)
+                    {
+                        scintilla::replace_selection(editor, &current_date_time_stamp());
                     }
                     LRESULT(0)
                 }
@@ -2430,7 +2452,6 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         session_snapshot_periodic_backup: session::DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP,
         backup_interval_seconds: session::DEFAULT_BACKUP_INTERVAL_SECONDS,
         word_wrap_enabled: session::DEFAULT_WORD_WRAP_ENABLED,
-        next_untitled_index: 1,
         search_state: SearchState {
             find_text: String::new(),
             replace_text: String::new(),
@@ -4056,6 +4077,15 @@ fn count_words(text: &str) -> usize {
     count
 }
 
+/// Current local date/time as "YYYY/MM/DD HH:MM", for Insert Date/Time.
+fn current_date_time_stamp() -> String {
+    let st = unsafe { GetLocalTime() };
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute
+    )
+}
+
 /// Formats a count with comma separators, e.g. 1234567 -> "1,234,567".
 fn format_thousands(value: usize) -> String {
     let digits = value.to_string();
@@ -5653,9 +5683,6 @@ fn restore_session_entry(
         smart_highlight_truncated: false,
         lexer_override: None,
     };
-    if doc_tab.doc.path.is_none() {
-        update_next_untitled_index_from_name(state, &doc_tab.doc.display_name);
-    }
     apply_syntax_for_doc(&doc_tab, state.editor_dark);
     restore_strike_ranges(editor, &entry.strike_ranges);
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
@@ -5794,21 +5821,12 @@ fn backup_interval_ms(interval_secs: u32) -> u32 {
     interval_secs.max(1).saturating_mul(1000)
 }
 
-fn next_untitled_name(state: &mut AppState) -> String {
-    let value = state.next_untitled_index;
-    state.next_untitled_index = state.next_untitled_index.saturating_add(1);
-    format!("new {value:03}")
-}
-
-fn update_next_untitled_index_from_name(state: &mut AppState, name: &str) {
-    if let Some(value) = name.strip_prefix("new ")
-        && let Ok(parsed) = value.trim().parse::<usize>()
-    {
-        let candidate = parsed.saturating_add(1);
-        if candidate > state.next_untitled_index {
-            state.next_untitled_index = candidate;
-        }
-    }
+fn next_untitled_name(_state: &mut AppState) -> String {
+    let st = unsafe { GetLocalTime() };
+    format!(
+        "{:04}-{:02}-{:02}-{:02}-{:02}",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute
+    )
 }
 
 fn ensure_doc_backup_path(doc: &mut Document) -> Result<()> {
