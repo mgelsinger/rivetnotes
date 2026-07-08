@@ -10,7 +10,7 @@ use crate::storage::atomic_write::{atomic_write_json, cleanup_stale_temp_files};
 pub const SETTINGS_FILE_NAME: &str = "settings.json";
 pub const MIN_VERTICAL_TAB_WIDTH_PX: i32 = 80;
 pub const MAX_VERTICAL_TAB_WIDTH_PX: i32 = 600;
-pub const DEFAULT_VERTICAL_TAB_WIDTH_PX: i32 = 180;
+pub const DEFAULT_VERTICAL_TAB_WIDTH_PX: i32 = 280;
 pub const DEFAULT_EDITOR_DARK: bool = true;
 pub const DEFAULT_SMART_HIGHLIGHT_ENABLED: bool = true;
 pub const DEFAULT_SMART_HIGHLIGHT_MATCH_CASE: bool = false;
