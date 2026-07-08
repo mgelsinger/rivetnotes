@@ -2830,6 +2830,7 @@ fn save_document_at(
     update_tab_text(state, index);
     update_title(hwnd, state);
     update_status(state);
+    note_recent_file(hwnd, state, &path);
     if let Err(err) = save_session_checkpoint(hwnd, state) {
         logging::log_error(&format!("session_save_after_manual_save_failed err={err}"));
     }
