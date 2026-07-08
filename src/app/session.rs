@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -19,6 +20,7 @@ pub const DEFAULT_WORD_WRAP_ENABLED: bool = true;
 pub const DEFAULT_ALWAYS_ON_TOP: bool = false;
 
 const APP_DIR_NAME: &str = "Rivet";
+const PORTABLE_DATA_DIR_NAME: &str = "data";
 const SESSIONS_DIR_NAME: &str = "sessions";
 const BACKUP_DIR_NAME: &str = "backup";
 const SESSION_FILE_NAME: &str = "session.json";
@@ -198,7 +200,33 @@ pub fn decide_restore_source(input: &RestoreDecisionInput) -> RestoreSource {
     }
 }
 
+/// Data directory next to the executable, used when that location is
+/// writable (i.e. running as a portable build, not installed under a
+/// protected directory like Program Files). Returns `None` if the exe path
+/// can't be resolved or the directory isn't writable, in which case the
+/// caller falls back to the per-user AppData location.
+fn portable_data_dir() -> Option<PathBuf> {
+    if cfg!(test) {
+        // Tests exercise data_dir() via LOCALAPPDATA/APPDATA env overrides;
+        // the test binary's own directory is writable, which would
+        // short-circuit those overrides and scribble into target/.
+        return None;
+    }
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    let candidate = exe_dir.join(PORTABLE_DATA_DIR_NAME);
+    fs::create_dir_all(&candidate).ok()?;
+    let probe = candidate.join(".write_test");
+    fs::write(&probe, b"").ok()?;
+    let _ = fs::remove_file(&probe);
+    Some(candidate)
+}
+
 pub fn data_dir() -> Result<PathBuf> {
+    if let Some(portable) = portable_data_dir() {
+        return Ok(portable);
+    }
+
     if let Ok(local) = std::env::var("LOCALAPPDATA")
         && !local.is_empty()
     {

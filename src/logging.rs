@@ -4,10 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use windows::Win32::Foundation::HANDLE;
-use windows::Win32::System::Com::CoTaskMemFree;
-use windows::Win32::UI::Shell::{FOLDERID_LocalAppData, KNOWN_FOLDER_FLAG, SHGetKnownFolderPath};
-
+use crate::app::session;
 use crate::error::{AppError, Result};
 
 const MAX_LOG_SIZE: u64 = 512 * 1024;
@@ -81,26 +78,8 @@ fn open_log_file() -> Result<File> {
 }
 
 fn log_directory() -> Result<PathBuf> {
-    let path = local_appdata_path().unwrap_or_else(std::env::temp_dir);
-    Ok(path.join("Rivet").join("logs"))
-}
-
-fn local_appdata_path() -> Option<PathBuf> {
-    let path =
-        unsafe { SHGetKnownFolderPath(&FOLDERID_LocalAppData, KNOWN_FOLDER_FLAG(0), HANDLE(0)) }
-            .ok()?;
-    let buffer = unsafe {
-        let mut length = 0usize;
-        while *path.0.add(length) != 0 {
-            length += 1;
-        }
-        std::slice::from_raw_parts(path.0, length)
-    };
-    let value = String::from_utf16(buffer).ok().map(PathBuf::from);
-    unsafe {
-        CoTaskMemFree(Some(path.0 as _));
-    }
-    value
+    let path = session::data_dir().unwrap_or_else(|_| std::env::temp_dir().join("Rivet"));
+    Ok(path.join("logs"))
 }
 
 fn rotate_logs(path: &Path) -> Result<()> {
