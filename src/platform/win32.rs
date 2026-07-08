@@ -11,16 +11,19 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreatePen, CreateSolidBrush, DT_CENTER, DT_END_ELLIPSIS, DT_HIDEPREFIX,
-    DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawTextW, EndPaint, FillRect, HBRUSH,
-    HDC, HGDIOBJ, InvalidateRect, LineTo, MONITOR_DEFAULTTONULL, MonitorFromRect, MoveToEx,
-    PAINTSTRUCT, PS_SOLID, ScreenToClient, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
+    DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawTextW, EndPaint, FillRect, GetDC,
+    GetDeviceCaps, HBRUSH, HDC, HGDIOBJ, InvalidateRect, LOGFONTW, LOGPIXELSY, LineTo,
+    MONITOR_DEFAULTTONULL, MonitorFromRect, MoveToEx, PAINTSTRUCT, PS_SOLID, ReleaseDC,
+    ScreenToClient, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::UI::Controls::Dialogs::{
-    CommDlgExtendedError, GetOpenFileNameW, GetSaveFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST,
-    OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    CF_EFFECTS, CF_FORCEFONTEXIST, CF_INITTOLOGFONTSTRUCT, CF_SCREENFONTS, CHOOSEFONTW,
+    ChooseFontW, CommDlgExtendedError, GetOpenFileNameW, GetSaveFileNameW, OFN_EXPLORER,
+    OFN_FILEMUSTEXIST, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 use windows::Win32::UI::Controls::{
     CDDS_ITEMPOSTPAINT, CDDS_ITEMPREPAINT, CDDS_PREPAINT, CDRF_DODEFAULT, CDRF_NEWFONT,
@@ -128,6 +131,7 @@ const IDM_EDIT_REPLACE: u16 = 323;
 const IDM_EDIT_REPLACE_ALL: u16 = 324;
 const IDM_EDIT_FIND_IN_FILES: u16 = 325;
 const IDM_EDIT_GOTO_LINE: u16 = 332;
+const IDM_EDIT_INSERT_DATETIME: u16 = 333;
 const CMD_TRANSFORM_UPPERCASE: u16 = 326;
 const CMD_TRANSFORM_LOWERCASE: u16 = 327;
 const CMD_COPY_FULL_PATH: u16 = 328;
@@ -147,6 +151,7 @@ const CMD_EDITOR_EXPAND_ALL: u16 = 353;
 const IDM_VIEW_ZOOM_IN: u16 = 354;
 const IDM_VIEW_ZOOM_OUT: u16 = 355;
 const IDM_VIEW_ZOOM_RESET: u16 = 356;
+const IDM_VIEW_FONT: u16 = 357;
 // Language (syntax) override commands. CMD_LANG_AUTO clears the per-tab override
 // and falls back to extension detection; the rest force a specific lexer.
 const CMD_LANG_AUTO: u16 = 360;
@@ -209,6 +214,7 @@ const VK_X: u16 = 0x58;
 const VK_Y: u16 = 0x59;
 const VK_Z: u16 = 0x5A;
 const VK_F3: u16 = 0x72;
+const VK_F5: u16 = 0x74;
 const VK_N: u16 = 0x4E;
 const VK_S: u16 = 0x53;
 const VK_OEM_4: u16 = 0xDB;
@@ -420,6 +426,8 @@ struct AppState {
     docs: Vec<DocTab>,
     active: usize,
     editor_dark: bool,
+    editor_font_name: String,
+    editor_font_size: i32,
     next_tab_runtime_id: i64,
     always_on_top: bool,
     window_placement: Option<session::WindowPlacementData>,
@@ -839,6 +847,13 @@ fn create_menu() -> Result<HMENU> {
             CMD_TRIM_LEADING_TRAILING as usize,
             w!("Trim Leading + Trailing Whitespace"),
         )?;
+        AppendMenuW(edit_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        AppendMenuW(
+            edit_menu,
+            MF_STRING,
+            IDM_EDIT_INSERT_DATETIME as usize,
+            w!("Insert Date/Time"),
+        )?;
         AppendMenuW(menu, MF_POPUP, edit_menu.0 as usize, w!("Edit"))?;
 
         let view_menu = CreatePopupMenu()?;
@@ -881,6 +896,8 @@ fn create_menu() -> Result<HMENU> {
             CMD_VIEW_ALWAYS_ON_TOP as usize,
             w!("Always On Top"),
         )?;
+        AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        AppendMenuW(view_menu, MF_STRING, IDM_VIEW_FONT as usize, w!("Font..."))?;
         AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(
             view_menu,
@@ -1115,6 +1132,11 @@ fn create_accelerators() -> Result<HACCEL> {
             fVirt: FVIRTKEY | FCONTROL,
             key: VK_G,
             cmd: IDM_EDIT_GOTO_LINE,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY,
+            key: VK_F5,
+            cmd: IDM_EDIT_INSERT_DATETIME,
         },
         ACCEL {
             fVirt: FVIRTKEY | FCONTROL,
@@ -1553,6 +1575,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
+                IDM_EDIT_INSERT_DATETIME => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Some(editor) = active_editor(state)
+                    {
+                        scintilla::replace_selection(editor, &current_date_time_stamp());
+                    }
+                    LRESULT(0)
+                }
                 IDM_EDIT_REDO => {
                     if let Some(state) = get_state(hwnd)
                         && let Some(editor) = active_editor(state)
@@ -1816,6 +1846,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     if let Some(state) = get_state(hwnd) {
                         let enabled = !state.always_on_top;
                         set_always_on_top(hwnd, state, enabled);
+                    }
+                    LRESULT(0)
+                }
+                IDM_VIEW_FONT => {
+                    if let Some(state) = get_state(hwnd) {
+                        match show_font_dialog(
+                            hwnd,
+                            &state.editor_font_name,
+                            state.editor_font_size,
+                        ) {
+                            Ok(Some((name, size))) => set_editor_font(state, name, size),
+                            Ok(None) => {}
+                            Err(err) => show_error("Rivet error", &err.to_string()),
+                        }
                     }
                     LRESULT(0)
                 }
@@ -2396,6 +2440,8 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
 
     // Captured before the struct literal moves `ui_settings` into the state.
     let editor_dark = ui_settings.editor_dark;
+    let editor_font_name = ui_settings.editor_font_name.clone();
+    let editor_font_size = ui_settings.editor_font_size;
     let state = AppState {
         tab_host: TabStripHost {
             top_tabs,
@@ -2417,6 +2463,8 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         docs: Vec::new(),
         active: 0,
         editor_dark,
+        editor_font_name,
+        editor_font_size,
         next_tab_runtime_id: 1,
         always_on_top: session::DEFAULT_ALWAYS_ON_TOP,
         window_placement: None,
@@ -2664,7 +2712,12 @@ fn open_path_new_tab(
         scintilla::set_eol_mode(doc_tab.editor, eol);
     }
 
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(
+        &doc_tab,
+        state.editor_dark,
+        &state.editor_font_name,
+        state.editor_font_size,
+    );
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     select_tab(hwnd, state, index);
     apply_large_file_mode_restrictions(hwnd, state, index);
@@ -2810,7 +2863,12 @@ fn save_document_at(
                 state.ui_settings.large_file_disable_word_wrap,
             ),
         );
-        apply_syntax_for_doc(doc_tab, state.editor_dark);
+        apply_syntax_for_doc(
+            doc_tab,
+            state.editor_dark,
+            &state.editor_font_name,
+            state.editor_font_size,
+        );
         scintilla::set_savepoint(doc_tab.editor);
         doc_tab.sticky_dirty = false;
         doc_tab.doc.is_dirty = false;
@@ -2883,7 +2941,12 @@ fn reload_doc_from_path(
             state.ui_settings.large_file_threshold_mb,
             state.ui_settings.large_file_disable_word_wrap,
         )?;
-        apply_syntax_for_doc(doc_tab, state.editor_dark);
+        apply_syntax_for_doc(
+            doc_tab,
+            state.editor_dark,
+            &state.editor_font_name,
+            state.editor_font_size,
+        );
         scintilla::goto_pos(
             doc_tab.editor,
             caret.min(scintilla::get_length(doc_tab.editor)),
@@ -4056,6 +4119,15 @@ fn count_words(text: &str) -> usize {
     count
 }
 
+/// Current local date/time as "YYYY/MM/DD HH:MM", for Insert Date/Time.
+fn current_date_time_stamp() -> String {
+    let st = unsafe { GetLocalTime() };
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute
+    )
+}
+
 /// Formats a count with comma separators, e.g. 1234567 -> "1,234,567".
 fn format_thousands(value: usize) -> String {
     let digits = value.to_string();
@@ -4239,9 +4311,9 @@ fn effective_lexer(doc_tab: &DocTab) -> scintilla::LexerKind {
         .unwrap_or_else(|| lexer_for_doc(&doc_tab.doc))
 }
 
-fn apply_syntax_for_doc(doc_tab: &DocTab, dark: bool) {
+fn apply_syntax_for_doc(doc_tab: &DocTab, dark: bool, font_name: &str, font_size: i32) {
     let lexer = effective_lexer(doc_tab);
-    scintilla::apply_lexer(doc_tab.editor, lexer, dark);
+    scintilla::apply_lexer(doc_tab.editor, lexer, dark, font_name, font_size);
     apply_editor_theme_overlays(doc_tab.editor, dark);
     if matches!(lexer, scintilla::LexerKind::Markdown) && !doc_tab.doc.large_file_mode {
         apply_markdown_fold_levels(doc_tab.editor);
@@ -4253,6 +4325,8 @@ fn apply_syntax_for_doc(doc_tab: &DocTab, dark: bool) {
 fn set_language_override(state: &mut AppState, over: Option<scintilla::LexerKind>) {
     let index = state.active;
     let dark = state.editor_dark;
+    let font_name = state.editor_font_name.clone();
+    let font_size = state.editor_font_size;
     let Some(doc_tab) = state.docs.get_mut(index) else {
         return;
     };
@@ -4260,7 +4334,7 @@ fn set_language_override(state: &mut AppState, over: Option<scintilla::LexerKind
         return;
     }
     doc_tab.lexer_override = over;
-    apply_syntax_for_doc(doc_tab, dark);
+    apply_syntax_for_doc(doc_tab, dark, &font_name, font_size);
 }
 
 /// Maps a Language-menu command id to the override it selects: `Some(None)` for
@@ -4559,7 +4633,12 @@ fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Re
     scintilla::set_eol_mode(editor, doc_tab.doc.eol);
     scintilla::set_wrap_enabled(editor, state.word_wrap_enabled);
     scintilla::set_savepoint(editor);
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(
+        &doc_tab,
+        state.editor_dark,
+        &state.editor_font_name,
+        state.editor_font_size,
+    );
 
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     select_tab(hwnd, state, index);
@@ -4616,7 +4695,12 @@ fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
         smart_highlight_truncated: false,
         lexer_override: None,
     };
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(
+        &doc_tab,
+        state.editor_dark,
+        &state.editor_font_name,
+        state.editor_font_size,
+    );
     restore_strike_ranges(doc_tab.editor, &strike_ranges);
 
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
@@ -5656,7 +5740,12 @@ fn restore_session_entry(
     if doc_tab.doc.path.is_none() {
         update_next_untitled_index_from_name(state, &doc_tab.doc.display_name);
     }
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(
+        &doc_tab,
+        state.editor_dark,
+        &state.editor_font_name,
+        state.editor_font_size,
+    );
     restore_strike_ranges(editor, &entry.strike_ranges);
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     if entry.cursor_pos >= 0 {
@@ -5829,6 +5918,45 @@ fn eol_mode_label(mode: i32) -> &'static str {
         2 => "LF",
         _ => "?",
     }
+}
+
+/// Shows the native font picker, pre-selected to `current_name`/`current_size`.
+/// Returns `None` if the user cancels.
+fn show_font_dialog(
+    hwnd: HWND,
+    current_name: &str,
+    current_size: i32,
+) -> Result<Option<(String, i32)>> {
+    let mut log_font = LOGFONTW::default();
+    let wide_name: Vec<u16> = current_name
+        .encode_utf16()
+        .take(log_font.lfFaceName.len() - 1)
+        .collect();
+    log_font.lfFaceName[..wide_name.len()].copy_from_slice(&wide_name);
+
+    let screen_dc = unsafe { GetDC(HWND(0)) };
+    let dpi = unsafe { GetDeviceCaps(screen_dc, LOGPIXELSY) };
+    unsafe {
+        ReleaseDC(HWND(0), screen_dc);
+    }
+    log_font.lfHeight = -((current_size * dpi + 36) / 72);
+
+    let mut choose_font = CHOOSEFONTW {
+        lStructSize: std::mem::size_of::<CHOOSEFONTW>() as u32,
+        hwndOwner: hwnd,
+        lpLogFont: &mut log_font,
+        Flags: CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT | CF_EFFECTS | CF_FORCEFONTEXIST,
+        ..Default::default()
+    };
+
+    let result = unsafe { ChooseFontW(&mut choose_font) };
+    if !result.as_bool() {
+        return Ok(None);
+    }
+
+    let name = wide_to_string(&log_font.lfFaceName)?;
+    let size = (choose_font.iPointSize / 10).max(1);
+    Ok(Some((name, size)))
 }
 
 fn open_file_dialog(hwnd: HWND) -> Result<Option<PathBuf>> {
@@ -6444,6 +6572,8 @@ fn persist_ui_settings(state: &AppState) {
     settings.tab_placement = state.tab_host.placement;
     settings.vertical_tab_width_px = state.tab_host.vertical_width_px;
     settings.editor_dark = state.editor_dark;
+    settings.editor_font_name = state.editor_font_name.clone();
+    settings.editor_font_size = state.editor_font_size;
     if let Err(err) = settings::save_settings(&settings) {
         logging::log_error(&format!("settings_save_failed err={err}"));
     }
@@ -6753,7 +6883,12 @@ fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
     state.editor_dark = enabled;
     update_editor_dark_menu(hwnd, enabled);
     for doc_tab in &state.docs {
-        apply_syntax_for_doc(doc_tab, enabled);
+        apply_syntax_for_doc(
+            doc_tab,
+            enabled,
+            &state.editor_font_name,
+            state.editor_font_size,
+        );
     }
     if let Err(err) = update_tab_host_theme(state, enabled) {
         logging::log_error(&format!("tab_host_theme_update_failed err={err}"));
@@ -6770,6 +6905,23 @@ fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
             0,
             0,
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+    persist_ui_settings(state);
+}
+
+fn set_editor_font(state: &mut AppState, name: String, size: i32) {
+    state.editor_font_name = name;
+    state.editor_font_size = size.clamp(
+        settings::MIN_EDITOR_FONT_SIZE,
+        settings::MAX_EDITOR_FONT_SIZE,
+    );
+    for doc_tab in &state.docs {
+        apply_syntax_for_doc(
+            doc_tab,
+            state.editor_dark,
+            &state.editor_font_name,
+            state.editor_font_size,
         );
     }
     persist_ui_settings(state);

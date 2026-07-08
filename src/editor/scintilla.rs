@@ -18,6 +18,7 @@ const SCI_SETCODEPAGE: u32 = 2037;
 const SCI_SETTEXT: u32 = 2181;
 const SCI_GETTEXT: u32 = 2182;
 const SCI_INSERTTEXT: u32 = 2003;
+const SCI_REPLACESEL: u32 = 2170;
 const SCI_GETLENGTH: u32 = 2006;
 const SCI_GETCHARAT: u32 = 2007;
 const SCI_GETCURRENTPOS: u32 = 2008;
@@ -607,8 +608,8 @@ pub fn create_window(parent: HWND, instance: HINSTANCE) -> Result<HWND> {
     Ok(hwnd)
 }
 
-pub fn apply_lexer(hwnd: HWND, lexer: LexerKind, dark: bool) {
-    apply_base_theme(hwnd, dark);
+pub fn apply_lexer(hwnd: HWND, lexer: LexerKind, dark: bool, font_name: &str, font_size: i32) {
+    apply_base_theme(hwnd, dark, font_name, font_size);
     set_lexer_by_name(hwnd, lexer_name(lexer));
     clear_keywords(hwnd);
     apply_fold_properties(hwnd);
@@ -671,6 +672,16 @@ pub fn insert_text(hwnd: HWND, pos: usize, text: &str) {
         return;
     };
     send_message(hwnd, SCI_INSERTTEXT, pos, text.as_ptr() as isize);
+}
+
+/// Replaces the current selection (or inserts at the caret if the selection
+/// is empty) with `text`, then leaves the caret positioned after it — the
+/// same behavior as typing or pasting.
+pub fn replace_selection(hwnd: HWND, text: &str) {
+    let Ok(text) = CString::new(text) else {
+        return;
+    };
+    send_message(hwnd, SCI_REPLACESEL, 0, text.as_ptr() as isize);
 }
 
 /// The newline sequence matching the document's current EOL mode.
@@ -968,7 +979,7 @@ fn lexer_name(lexer: LexerKind) -> &'static str {
     }
 }
 
-fn apply_base_theme(hwnd: HWND, dark: bool) {
+fn apply_base_theme(hwnd: HWND, dark: bool, font_name: &str, font_size: i32) {
     let (fore, back, sel_back, caret, caret_line) = if dark {
         (
             COLOR_DARK_FORE,
@@ -988,8 +999,8 @@ fn apply_base_theme(hwnd: HWND, dark: bool) {
     };
     set_style_fore(hwnd, STYLE_DEFAULT, fore);
     set_style_back(hwnd, STYLE_DEFAULT, back);
-    set_style_size(hwnd, STYLE_DEFAULT, 11);
-    set_style_font(hwnd, STYLE_DEFAULT, "Consolas");
+    set_style_size(hwnd, STYLE_DEFAULT, font_size.max(1) as usize);
+    set_style_font(hwnd, STYLE_DEFAULT, font_name);
     send_message(hwnd, SCI_STYLECLEARALL, 0, 0);
     send_message(hwnd, SCI_SETSELFORE, 1, fore as isize);
     send_message(hwnd, SCI_SETSELBACK, 1, sel_back as isize);

@@ -25,6 +25,10 @@ pub const DEFAULT_ZOOM_LEVEL: i32 = 0;
 /// Scintilla's supported zoom range (points added to the base font size).
 pub const MIN_ZOOM_LEVEL: i32 = -10;
 pub const MAX_ZOOM_LEVEL: i32 = 20;
+pub const DEFAULT_EDITOR_FONT_NAME: &str = "Consolas";
+pub const DEFAULT_EDITOR_FONT_SIZE: i32 = 11;
+pub const MIN_EDITOR_FONT_SIZE: i32 = 6;
+pub const MAX_EDITOR_FONT_SIZE: i32 = 72;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -73,6 +77,13 @@ pub struct UiSettings {
     /// [`MIN_ZOOM_LEVEL`]..=[`MAX_ZOOM_LEVEL`].
     #[serde(default)]
     pub zoom_level: i32,
+    /// `settings.json`: editor font family name (e.g. "Consolas").
+    #[serde(default = "default_editor_font_name")]
+    pub editor_font_name: String,
+    /// `settings.json`: editor base font size in points, clamped to
+    /// [`MIN_EDITOR_FONT_SIZE`]..=[`MAX_EDITOR_FONT_SIZE`].
+    #[serde(default = "default_editor_font_size")]
+    pub editor_font_size: i32,
 }
 
 impl Default for UiSettings {
@@ -89,6 +100,8 @@ impl Default for UiSettings {
             large_file_disable_smart_highlight: DEFAULT_LARGE_FILE_DISABLE_SMART_HIGHLIGHT,
             recent_files: Vec::new(),
             zoom_level: DEFAULT_ZOOM_LEVEL,
+            editor_font_name: DEFAULT_EDITOR_FONT_NAME.to_string(),
+            editor_font_size: DEFAULT_EDITOR_FONT_SIZE,
         }
     }
 }
@@ -121,6 +134,10 @@ struct UiSettingsWire {
     recent_files: Vec<String>,
     #[serde(default)]
     zoom_level: i32,
+    #[serde(default = "default_editor_font_name")]
+    editor_font_name: String,
+    #[serde(default = "default_editor_font_size")]
+    editor_font_size: i32,
 }
 
 impl From<UiSettingsWire> for UiSettings {
@@ -143,6 +160,8 @@ impl From<UiSettingsWire> for UiSettings {
                 .unwrap_or(DEFAULT_LARGE_FILE_DISABLE_SMART_HIGHLIGHT),
             recent_files: value.recent_files,
             zoom_level: value.zoom_level,
+            editor_font_name: value.editor_font_name,
+            editor_font_size: value.editor_font_size,
         }
     }
 }
@@ -174,6 +193,12 @@ impl UiSettings {
             .clamp(MIN_LARGE_FILE_THRESHOLD_MB, MAX_LARGE_FILE_THRESHOLD_MB);
         self.recent_files.truncate(MAX_RECENT_FILES);
         self.zoom_level = self.zoom_level.clamp(MIN_ZOOM_LEVEL, MAX_ZOOM_LEVEL);
+        if self.editor_font_name.trim().is_empty() {
+            self.editor_font_name = DEFAULT_EDITOR_FONT_NAME.to_string();
+        }
+        self.editor_font_size = self
+            .editor_font_size
+            .clamp(MIN_EDITOR_FONT_SIZE, MAX_EDITOR_FONT_SIZE);
         self
     }
 }
@@ -220,6 +245,14 @@ fn default_smart_highlight_enabled() -> bool {
 
 fn default_editor_dark() -> bool {
     DEFAULT_EDITOR_DARK
+}
+
+fn default_editor_font_name() -> String {
+    DEFAULT_EDITOR_FONT_NAME.to_string()
+}
+
+fn default_editor_font_size() -> i32 {
+    DEFAULT_EDITOR_FONT_SIZE
 }
 
 fn default_smart_highlight_match_case() -> bool {
@@ -351,6 +384,8 @@ mod tests {
             large_file_disable_smart_highlight: true,
             recent_files: vec!["C:\\a.txt".to_string(), "C:\\b.md".to_string()],
             zoom_level: 3,
+            editor_font_name: "Consolas".to_string(),
+            editor_font_size: 11,
         };
         let json = serde_json::to_string_pretty(&settings).unwrap();
         assert!(json.contains("\"tab_placement\": \"right\""));
