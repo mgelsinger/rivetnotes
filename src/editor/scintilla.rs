@@ -18,6 +18,7 @@ const SCI_SETCODEPAGE: u32 = 2037;
 const SCI_SETTEXT: u32 = 2181;
 const SCI_GETTEXT: u32 = 2182;
 const SCI_INSERTTEXT: u32 = 2003;
+const SCI_REPLACESEL: u32 = 2170;
 const SCI_GETLENGTH: u32 = 2006;
 const SCI_GETCHARAT: u32 = 2007;
 const SCI_GETCURRENTPOS: u32 = 2008;
@@ -671,6 +672,16 @@ pub fn insert_text(hwnd: HWND, pos: usize, text: &str) {
         return;
     };
     send_message(hwnd, SCI_INSERTTEXT, pos, text.as_ptr() as isize);
+}
+
+/// Replaces the current selection (or inserts at the caret if the selection
+/// is empty) with `text`, then leaves the caret positioned after it — the
+/// same behavior as typing or pasting.
+pub fn replace_selection(hwnd: HWND, text: &str) {
+    let Ok(text) = CString::new(text) else {
+        return;
+    };
+    send_message(hwnd, SCI_REPLACESEL, 0, text.as_ptr() as isize);
 }
 
 /// The newline sequence matching the document's current EOL mode.
