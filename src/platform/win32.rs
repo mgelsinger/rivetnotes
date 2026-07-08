@@ -2851,6 +2851,13 @@ fn check_external_change(hwnd: HWND, state: &mut AppState) -> Result<()> {
         .get(index)
         .and_then(|doc_tab| doc_tab.doc.stamp.clone());
 
+    if !path.exists() {
+        // File was deleted, renamed, or is on an unmounted drive. Leave the
+        // tab as-is rather than erroring on every focus regain; the user
+        // still has the in-memory content and can Save As if needed.
+        return Ok(());
+    }
+
     if let Some(new_stamp) = document::check_stamp(&path, &stamp)? {
         if prompt_reload(hwnd) {
             reload_doc_from_path(hwnd, state, index, &path)?;
