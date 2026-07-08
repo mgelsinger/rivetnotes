@@ -1,4 +1,6 @@
+use std::ffi::OsStr;
 use std::io::BufRead;
+use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -2748,7 +2750,7 @@ fn save_document_at(
     encoding_override: Option<TextEncoding>,
     force_save_as: bool,
 ) -> Result<bool> {
-    let (encoding, existing_path) = {
+    let (encoding, existing_path, display_name) = {
         let doc_tab = state
             .docs
             .get(index)
@@ -2756,10 +2758,11 @@ fn save_document_at(
         (
             encoding_override.unwrap_or(doc_tab.doc.encoding),
             doc_tab.doc.path.clone(),
+            doc_tab.doc.display_name.clone(),
         )
     };
     let path = if force_save_as || existing_path.is_none() {
-        match save_file_dialog(hwnd)? {
+        match save_file_dialog(hwnd, &display_name)? {
             Some(path) => path,
             None => return Ok(false),
         }
@@ -5862,9 +5865,16 @@ fn open_file_dialog(hwnd: HWND) -> Result<Option<PathBuf>> {
     )))
 }
 
-fn save_file_dialog(hwnd: HWND) -> Result<Option<PathBuf>> {
+fn save_file_dialog(hwnd: HWND, default_name: &str) -> Result<Option<PathBuf>> {
     let mut buffer = vec![0u16; 1024];
+    let default_wide: Vec<u16> = OsStr::new(default_name)
+        .encode_wide()
+        .filter(|&unit| unit != 0)
+        .collect();
+    let copy_len = default_wide.len().min(buffer.len() - 1);
+    buffer[..copy_len].copy_from_slice(&default_wide[..copy_len]);
     let filter = w!("All Files\0*.*\0\0");
+    let def_ext = w!("txt");
 
     let mut ofn = OPENFILENAMEW {
         lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
@@ -5872,6 +5882,7 @@ fn save_file_dialog(hwnd: HWND) -> Result<Option<PathBuf>> {
         lpstrFile: PWSTR(buffer.as_mut_ptr()),
         nMaxFile: buffer.len() as u32,
         lpstrFilter: PCWSTR(filter.as_ptr()),
+        lpstrDefExt: PCWSTR(def_ext.as_ptr()),
         Flags: OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT,
         ..Default::default()
     };
