@@ -146,6 +146,32 @@ pub fn disable_visual_styles(hwnd: HWND) {
     }
 }
 
+/// Reverses [`disable_visual_styles`]: restores the control's normal themed
+/// (visual-styles) rendering. Passing real null pointers (as opposed to
+/// empty-string pointers, which is what disables theming) resets the
+/// control to its default theme.
+pub fn restore_visual_styles(hwnd: HWND) {
+    if hwnd.0 == 0 {
+        return;
+    }
+    unsafe {
+        let _ = SetWindowTheme(hwnd, PCWSTR::null(), PCWSTR::null());
+    }
+}
+
+/// Sets a checkbox/radio-style `BS_AUTOCHECKBOX` control's visual style for
+/// the given dark-mode state: disabled (classic rendering, so
+/// `WM_CTLCOLORBTN`'s text color actually takes effect) when dark, restored
+/// (normal themed rendering) when light. Idempotent — safe to call on every
+/// theme change, not just once at creation.
+pub fn set_checkbox_dark_mode(hwnd: HWND, dark: bool) {
+    if dark {
+        disable_visual_styles(hwnd);
+    } else {
+        restore_visual_styles(hwnd);
+    }
+}
+
 /// Applies the dark or light Explorer visual style to a control. Used on
 /// the vertical tab `ListView` so the system-drawn selection rectangle
 /// matches our dark theme instead of flashing the light Explorer chrome on
