@@ -26,6 +26,10 @@ implemented deeply instead of spreading effort across a large plugin surface.
   persisted between sessions
 - Live word count in the status bar
 - `Reload from Disk` in the `File` menu (with unsaved-changes confirmation)
+- Print (`File > Print...` or `Ctrl+P`): black text on white regardless of
+  theme, line numbers print if the `View > Line Numbers` toggle is on, word
+  wrap is always on for print output, with a filename/date header and
+  page-number footer on every page
 
 ### Search and Navigation
 
@@ -69,6 +73,7 @@ implemented deeply instead of spreading effort across a large plugin surface.
 | Open | `Ctrl+O` |
 | Save | `Ctrl+S` |
 | Save all | `Ctrl+Shift+S` |
+| Print | `Ctrl+P` |
 | Close tab | `Ctrl+W` |
 | Cycle tab placement | `Ctrl+Alt+T` |
 | Find | `Ctrl+F` |

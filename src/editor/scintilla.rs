@@ -90,6 +90,9 @@ const SCI_GETZOOM: u32 = 2374;
 const SCI_SETEOLMODE: u32 = 2031;
 const SCI_GETEOLMODE: u32 = 2030;
 const SCI_SETWRAPMODE: u32 = 2268;
+const SCI_SETPRINTCOLOURMODE: u32 = 2148;
+const SCI_SETPRINTWRAPMODE: u32 = 2406;
+const SCI_FORMATRANGE: u32 = 2151;
 const SCI_GETSELTEXT: u32 = 2161;
 const SCI_GETTARGETSTART: u32 = 2191;
 const SCI_GETTARGETEND: u32 = 2193;
@@ -134,6 +137,7 @@ const SC_EOL_CR: usize = 1;
 const SC_EOL_LF: usize = 2;
 const SC_WRAP_NONE: usize = 0;
 const SC_WRAP_WORD: usize = 1;
+const SC_PRINT_BLACKONWHITE: usize = 2;
 const SC_MARGIN_SYMBOL: usize = 0;
 const SC_MOD_INSERTTEXT: usize = 0x1;
 const SC_MOD_DELETETEXT: usize = 0x2;
@@ -859,6 +863,100 @@ pub fn selected_text(hwnd: HWND) -> Result<String> {
 
 pub fn get_length(hwnd: HWND) -> usize {
     send_message(hwnd, SCI_GETLENGTH, 0, 0).0 as usize
+}
+
+/// Layout of a device rectangle used by `SCI_FORMATRANGE`, matching
+/// Scintilla's `Sci_Rectangle` (plain `int` fields regardless of large-file
+/// position mode).
+#[repr(C)]
+struct SciRectangle {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+#[repr(C)]
+struct SciCharacterRange {
+    cp_min: i32,
+    cp_max: i32,
+}
+
+/// Matches Scintilla's `Sci_RangeToFormat`. `hdc`/`hdc_target` hold raw
+/// `HDC` values (Scintilla declares them `void*`).
+#[repr(C)]
+struct SciRangeToFormat {
+    hdc: isize,
+    hdc_target: isize,
+    rc: SciRectangle,
+    rc_page: SciRectangle,
+    chrg: SciCharacterRange,
+}
+
+/// A device-coordinate rectangle for print layout (page bounds or the
+/// content area within it).
+#[derive(Copy, Clone)]
+pub struct PrintRect {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+/// Forces print output to black text on white background, ignoring both
+/// syntax-highlight colors and the live editor's dark/light theme — the
+/// print job should look the same regardless of how the document is
+/// currently themed on screen. Also forces word wrap for the print job
+/// specifically, via Scintilla's print-only wrap mode, which is fully
+/// independent of `SCI_SETWRAPMODE` and does not touch on-screen display.
+pub fn prepare_for_print(hwnd: HWND) {
+    send_message(hwnd, SCI_SETPRINTCOLOURMODE, SC_PRINT_BLACKONWHITE, 0);
+    send_message(hwnd, SCI_SETPRINTWRAPMODE, SC_WRAP_WORD, 0);
+}
+
+/// Renders (or, with `draw = false`, only measures) the document range
+/// `[range_start, range_end)` into `print_rect` on the page described by
+/// `page_rect`, using `hdc` as both the render target and the device
+/// context Scintilla measures text metrics against (the same HDC for
+/// actual printing). Returns the position just past the last character
+/// that fit, which becomes `range_start` for the next page.
+pub fn format_range(
+    hwnd: HWND,
+    draw: bool,
+    hdc: isize,
+    print_rect: PrintRect,
+    page_rect: PrintRect,
+    range_start: usize,
+    range_end: usize,
+) -> usize {
+    let mut fr = SciRangeToFormat {
+        hdc,
+        hdc_target: hdc,
+        rc: SciRectangle {
+            left: print_rect.left,
+            top: print_rect.top,
+            right: print_rect.right,
+            bottom: print_rect.bottom,
+        },
+        rc_page: SciRectangle {
+            left: page_rect.left,
+            top: page_rect.top,
+            right: page_rect.right,
+            bottom: page_rect.bottom,
+        },
+        chrg: SciCharacterRange {
+            cp_min: range_start as i32,
+            cp_max: range_end as i32,
+        },
+    };
+    let lparam = std::ptr::addr_of_mut!(fr) as isize;
+    send_message(hwnd, SCI_FORMATRANGE, draw as usize, lparam).0 as usize
+}
+
+/// Must be called once after the print job finishes to let Scintilla free
+/// resources cached across the `SCI_FORMATRANGE` calls.
+pub fn end_format_range(hwnd: HWND) {
+    send_message(hwnd, SCI_FORMATRANGE, 0, 0);
 }
 
 pub fn set_eol_mode(hwnd: HWND, eol: Eol) {

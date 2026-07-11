@@ -1,6 +1,7 @@
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -10,32 +11,38 @@ use windows::Win32::Foundation::{
     POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreatePen, CreateSolidBrush, DT_CENTER, DT_END_ELLIPSIS, DT_HIDEPREFIX,
-    DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawTextW, EndPaint, FillRect, HBRUSH,
-    HDC, HGDIOBJ, InvalidateRect, LineTo, MONITOR_DEFAULTTONULL, MonitorFromRect, MoveToEx,
-    PAINTSTRUCT, PS_SOLID, ScreenToClient, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
+    BeginPaint, COLOR_BTNFACE, CreateFontW, CreatePen, CreateSolidBrush, DEFAULT_GUI_FONT,
+    DT_CENTER, DT_END_ELLIPSIS, DT_HIDEPREFIX, DT_NOCLIP, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER,
+    DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, GetDeviceCaps, GetStockObject,
+    GetSysColorBrush, HBRUSH, HDC, HFONT, HGDIOBJ, HORZRES, InvalidateRect, LOGPIXELSX, LOGPIXELSY,
+    LineTo, MONITOR_DEFAULTTONULL, MonitorFromRect, MoveToEx, PAINTSTRUCT, PS_SOLID,
+    ScreenToClient, SelectObject, SetBkMode, SetTextColor, TRANSPARENT, VERTRES,
 };
+use windows::Win32::Storage::Xps::{DOCINFOW, EndDoc, EndPage, StartDocW, StartPage};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::UI::Controls::Dialogs::{
     CommDlgExtendedError, GetOpenFileNameW, GetSaveFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST,
-    OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW, PD_NOPAGENUMS, PD_NOSELECTION,
+    PD_RETURNDC, PRINTDLGW, PrintDlgW,
 };
 use windows::Win32::UI::Controls::{
     CDDS_ITEMPOSTPAINT, CDDS_ITEMPREPAINT, CDDS_PREPAINT, CDRF_DODEFAULT, CDRF_NEWFONT,
-    CDRF_NOTIFYITEMDRAW, CDRF_NOTIFYPOSTPAINT, ICC_LISTVIEW_CLASSES, ICC_WIN95_CLASSES,
-    INITCOMMONCONTROLSEX, InitCommonControlsEx, LIST_VIEW_ITEM_STATE_FLAGS, LVCF_WIDTH, LVCOLUMNW,
-    LVHITTESTINFO, LVIF_PARAM, LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVM_DELETEALLITEMS,
-    LVM_GETITEMRECT, LVM_HITTEST, LVM_INSERTCOLUMNW, LVM_INSERTITEMW, LVM_SETBKCOLOR,
-    LVM_SETCOLUMNWIDTH, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMSTATE, LVM_SETTEXTBKCOLOR,
-    LVM_SETTEXTCOLOR, LVN_ITEMCHANGED, LVS_EX_DOUBLEBUFFER, LVS_EX_FULLROWSELECT,
-    LVS_NOCOLUMNHEADER, LVS_REPORT, LVS_SHOWSELALWAYS, LVS_SINGLESEL, NM_CUSTOMDRAW, NM_RCLICK,
-    NMHDR, NMLISTVIEW, NMLVCUSTOMDRAW, ODS_HOTLIGHT, ODS_INACTIVE, ODS_NOACCEL, ODS_SELECTED,
-    SB_GETPARTS, SB_GETRECT, SB_GETTEXTLENGTHW, SB_GETTEXTW, SB_SETPARTS, SB_SETTEXTW,
-    STATUSCLASSNAMEW, TCHITTESTINFO, TCIF_TEXT, TCITEMW, TCM_DELETEITEM, TCM_GETCURSEL,
-    TCM_GETITEMCOUNT, TCM_GETITEMRECT, TCM_HITTEST, TCM_INSERTITEMW, TCM_SETCURSEL, TCM_SETITEMW,
-    TCM_SETMINTABWIDTH, TCM_SETPADDING, TCN_SELCHANGE, WC_LISTVIEWW, WC_TABCONTROLW,
+    CDRF_NOTIFYITEMDRAW, CDRF_NOTIFYPOSTPAINT, DRAWITEMSTRUCT, ICC_LISTVIEW_CLASSES,
+    ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, LIST_VIEW_ITEM_STATE_FLAGS,
+    LVCF_WIDTH, LVCOLUMNW, LVHITTESTINFO, LVIF_PARAM, LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED,
+    LVITEMW, LVM_DELETEALLITEMS, LVM_GETITEMRECT, LVM_HITTEST, LVM_INSERTCOLUMNW, LVM_INSERTITEMW,
+    LVM_SETBKCOLOR, LVM_SETCOLUMNWIDTH, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMSTATE,
+    LVM_SETTEXTBKCOLOR, LVM_SETTEXTCOLOR, LVN_ITEMCHANGED, LVS_EX_DOUBLEBUFFER,
+    LVS_EX_FULLROWSELECT, LVS_NOCOLUMNHEADER, LVS_REPORT, LVS_SHOWSELALWAYS, LVS_SINGLESEL,
+    NM_CUSTOMDRAW, NM_RCLICK, NMHDR, NMLISTVIEW, NMLVCUSTOMDRAW, ODS_HOTLIGHT, ODS_INACTIVE,
+    ODS_NOACCEL, ODS_SELECTED, SB_GETPARTS, SB_GETRECT, SB_GETTEXTLENGTHW, SB_GETTEXTW,
+    SB_SETPARTS, SB_SETTEXTW, STATUSCLASSNAMEW, TCHITTESTINFO, TCIF_TEXT, TCITEMW, TCM_DELETEITEM,
+    TCM_GETCURSEL, TCM_GETITEMCOUNT, TCM_GETITEMRECT, TCM_HITTEST, TCM_INSERTITEMW, TCM_SETCURSEL,
+    TCM_SETITEMW, TCM_SETMINTABWIDTH, TCM_SETPADDING, TCN_SELCHANGE, TOOLTIPS_CLASSW, TTF_IDISHWND,
+    TTF_SUBCLASS, TTM_ADDTOOLW, TTS_ALWAYSTIP, TTTOOLINFOW, WC_LISTVIEWW, WC_TABCONTROLW,
 };
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, SetProcessDpiAwarenessContext,
@@ -49,33 +56,35 @@ use windows::Win32::UI::Shell::{
     SHGetPathFromIDListW, SetWindowSubclass, ShellExecuteW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ACCEL, AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_PUSHBUTTON,
-    CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CheckMenuItem, CreateAcceleratorTableW, CreateMenu,
-    CreatePopupMenu, CreateWindowExW, DefWindowProcW, DeleteMenu, DestroyAcceleratorTable,
-    DestroyMenu, DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL, ES_NUMBER, EnableMenuItem, FALT,
-    FCONTROL, FSHIFT, FVIRTKEY, GCLP_HICON, GCLP_HICONSM, GWLP_USERDATA, GetClientRect,
-    GetCursorPos, GetMenu, GetMenuBarInfo, GetMenuItemCount, GetMenuItemInfoW, GetMessageW,
-    GetParent, GetSubMenu, GetSystemMetrics, GetWindowLongPtrW, GetWindowPlacement, GetWindowRect,
-    GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON, HMENU, HWND_NOTOPMOST, HWND_TOPMOST,
-    ICON_BIG, ICON_SMALL, ICON_SMALL2, IDC_ARROW, IDC_SIZEWE, IDI_APPLICATION, IDNO, IDYES,
-    IMAGE_ICON, IsIconic, KillTimer, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LBN_DBLCLK,
-    LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW,
-    LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL,
-    MENUBARINFO, MENUITEMINFOW, MF_BYCOMMAND, MF_BYPOSITION, MF_CHECKED, MF_ENABLED, MF_GRAYED,
-    MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MIIM_STRING, MSG, MessageBoxW, OBJID_MENU,
-    PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE,
-    SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, SW_SHOWNORMAL, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_METRICS_INDEX, SendMessageW,
-    SetClassLongPtrW, SetCursor, SetTimer, SetWindowLongPtrW, SetWindowPlacement, SetWindowPos,
-    SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS,
-    WM_ACTIVATEAPP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_COPYDATA,
-    WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORDLG, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX,
-    WM_CTLCOLORSTATIC, WM_DESTROY, WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETICON,
-    WM_INITMENUPOPUP, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE,
-    WM_NCDESTROY, WM_NOTIFY, WM_PAINT, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW,
-    WPF_RESTORETOMAXIMIZED, WS_BORDER, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW,
-    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    ACCEL, AppendMenuW, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_OWNERDRAW,
+    BS_PUSHBUTTON, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CheckMenuItem, CreateAcceleratorTableW,
+    CreateMenu, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DeleteMenu,
+    DestroyAcceleratorTable, DestroyMenu, DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL,
+    ES_NUMBER, EnableMenuItem, FALT, FCONTROL, FSHIFT, FVIRTKEY, GCLP_HICON, GCLP_HICONSM,
+    GWLP_USERDATA, GetClientRect, GetCursorPos, GetDlgItem, GetMenuBarInfo, GetMenuItemCount,
+    GetMenuItemInfoW, GetMessageW, GetParent, GetSubMenu, GetSystemMetrics, GetWindowLongPtrW,
+    GetWindowPlacement, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON, HMENU,
+    HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG, ICON_SMALL, ICON_SMALL2, IDC_ARROW, IDC_SIZEWE,
+    IDI_APPLICATION, IDNO, IDYES, IMAGE_ICON, IsIconic, KillTimer, LB_ADDSTRING, LB_GETCURSEL,
+    LB_RESETCONTENT, LBN_DBLCLK, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LR_DEFAULTCOLOR, LR_SHARED,
+    LoadCursorW, LoadIconW, LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK,
+    MB_YESNO, MB_YESNOCANCEL, MENUBARINFO, MENUITEMINFOW, MF_BYCOMMAND, MF_BYPOSITION, MF_CHECKED,
+    MF_ENABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MIIM_STRING, MSG,
+    MessageBoxW, OBJID_MENU, PostMessageW, PostQuitMessage, RegisterClassExW, SM_CXICON,
+    SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE, SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED,
+    SW_SHOWMINIMIZED, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SYSTEM_METRICS_INDEX, SendMessageW, SetClassLongPtrW, SetCursor,
+    SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPlacement, SetWindowPos,
+    SetWindowTextW, ShowWindow, TPM_LEFTALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TPM_TOPALIGN, TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE,
+    WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS, WM_ACTIVATEAPP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE,
+    WM_COMMAND, WM_CONTEXTMENU, WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORDLG,
+    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DRAWITEM, WM_DROPFILES,
+    WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP, WM_KEYDOWN, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_NULL, WM_PAINT,
+    WM_SETCURSOR, WM_SETFONT, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WPF_RESTORETOMAXIMIZED,
+    WS_BORDER, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_SYSMENU,
+    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::PWSTR;
 use windows::core::{HSTRING, PCWSTR, w};
@@ -106,6 +115,7 @@ const IDM_FILE_SAVE_AS_UTF8_BOM: u16 = 103;
 const IDM_FILE_SAVE_AS_UTF16_LE: u16 = 104;
 const IDM_FILE_SAVE_ALL: u16 = 105;
 const IDM_FILE_RELOAD: u16 = 106;
+const IDM_FILE_PRINT: u16 = 107;
 const IDM_FILE_EXIT: u16 = 199;
 const IDM_EDIT_UNDO: u16 = 300;
 const IDM_EDIT_REDO: u16 = 301;
@@ -210,6 +220,7 @@ const VK_Y: u16 = 0x59;
 const VK_Z: u16 = 0x5A;
 const VK_F3: u16 = 0x72;
 const VK_N: u16 = 0x4E;
+const VK_P: u16 = 0x50;
 const VK_S: u16 = 0x53;
 const VK_OEM_4: u16 = 0xDB;
 const VK_OEM_6: u16 = 0xDD;
@@ -259,6 +270,15 @@ const FIND_CLASS: PCWSTR = w!("rivet_find_dialog");
 const FIND_FILES_CLASS: PCWSTR = w!("rivet_find_in_files");
 const GOTO_LINE_CLASS: PCWSTR = w!("rivet_goto_line_dialog");
 const SPLITTER_CLASS: PCWSTR = w!("rivet_tab_splitter");
+const TOOLBAR_ROW_CLASS: PCWSTR = w!("rivet_toolbar_row");
+
+const IDC_TOOLBAR_FILE: usize = 5400;
+const IDC_TOOLBAR_EDIT: usize = 5401;
+const IDC_TOOLBAR_VIEW: usize = 5402;
+const IDC_TOOLBAR_NEW: usize = 5403;
+const IDC_TOOLBAR_SAVE_AS: usize = 5404;
+const IDC_TOOLBAR_PRINT: usize = 5405;
+const TOOLBAR_ROW_HEIGHT: i32 = 34;
 
 const SCFIND_MATCHCASE: usize = 0x4;
 const SCFIND_WHOLEWORD: usize = 0x2;
@@ -440,6 +460,8 @@ struct AppState {
     go_to_line_dialog: Option<GoToLineDialogState>,
     find_in_files: Option<FindInFilesState>,
     status_message: Option<String>,
+    main_menu: HMENU,
+    toolbar_row: HWND,
 }
 
 pub fn run() -> Result<()> {
@@ -498,7 +520,6 @@ pub fn run() -> Result<()> {
 
     register_aux_classes(instance)?;
 
-    let menu = create_menu().map_err(|err| AppError::new(format!("create_menu: {err}")))?;
     let hwnd = unsafe {
         CreateWindowExW(
             Default::default(),
@@ -510,7 +531,7 @@ pub fn run() -> Result<()> {
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             HWND(0),
-            menu,
+            HMENU(0),
             instance,
             None,
         )
@@ -712,6 +733,14 @@ fn create_menu() -> Result<HMENU> {
             IDM_FILE_SAVE_AS_UTF16_LE as usize,
             w!("Save As (UTF-16 LE)"),
         )?;
+        AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        AppendMenuW(
+            file_menu,
+            MF_STRING,
+            IDM_FILE_PRINT as usize,
+            w!("Print...\tCtrl+P"),
+        )?;
+        AppendMenuW(file_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(file_menu, MF_STRING, IDM_FILE_EXIT as usize, w!("Exit"))?;
         AppendMenuW(menu, MF_POPUP, file_menu.0 as usize, w!("File"))?;
 
@@ -982,6 +1011,7 @@ fn register_aux_classes(instance: HINSTANCE) -> Result<()> {
     register_window_class(instance, FIND_FILES_CLASS, Some(find_in_files_wndproc))?;
     register_window_class(instance, GOTO_LINE_CLASS, Some(goto_line_wndproc))?;
     register_window_class(instance, SPLITTER_CLASS, Some(splitter_wndproc))?;
+    register_window_class(instance, TOOLBAR_ROW_CLASS, Some(toolbar_row_wndproc))?;
     Ok(())
 }
 
@@ -1008,6 +1038,386 @@ fn register_window_class(
         }
     }
     Ok(())
+}
+
+/// Segoe Fluent Icons / Segoe MDL2 Assets glyph font, used for the toolbar
+/// row's icon buttons. Cached per-DPI (and leaked, matching the existing
+/// `cached_solid_brush` pattern for GDI objects that live as long as the
+/// app) since the window's DPI can settle after the font is first needed
+/// (e.g. during early WM_CREATE/WM_SIZE before Windows reports the final
+/// per-monitor DPI), and a stale font would leave icons the wrong size.
+fn toolbar_icon_font(hwnd: HWND) -> HFONT {
+    static CACHE: Mutex<Option<(u32, isize)>> = Mutex::new(None);
+    let dpi = unsafe { GetDpiForWindow(hwnd) };
+    let mut cache = match CACHE.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if let Some((cached_dpi, handle)) = *cache
+        && cached_dpi == dpi
+    {
+        return HFONT(handle);
+    }
+    let height = -scale_for_dpi(hwnd, 16);
+    let font = unsafe {
+        CreateFontW(
+            height,
+            0,
+            0,
+            0,
+            400,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            w!("Segoe Fluent Icons"),
+        )
+    };
+    *cache = Some((dpi, font.0));
+    font
+}
+
+/// Creates the File/Edit/View label buttons and New/Save As/Print icon
+/// buttons inside the toolbar row. Icon buttons use icon-font glyphs
+/// (Segoe Fluent Icons) rather than hand-drawn GDI glyphs.
+fn create_toolbar_row_buttons(toolbar_row: HWND, instance: HINSTANCE) -> Result<()> {
+    // BS_OWNERDRAW: standard BS_PUSHBUTTON always self-draws its 3D face
+    // using system colors and ignores WM_CTLCOLORBTN's background brush
+    // regardless of theme, so a themed dark button needs full owner-draw.
+    let label_style = window_style(WS_CHILD.0 | WS_VISIBLE.0 | BS_OWNERDRAW as u32 | WS_TABSTOP.0);
+    let label_height = scale_for_dpi(toolbar_row, 26);
+    let label_width = scale_for_dpi(toolbar_row, 56);
+    let icon_width = scale_for_dpi(toolbar_row, 32);
+    let y = (TOOLBAR_ROW_HEIGHT - 26) / 2;
+    let y = scale_for_dpi(toolbar_row, y.max(0));
+
+    let labels: [(usize, &str, i32); 3] = [
+        (IDC_TOOLBAR_FILE, "File", 0),
+        (IDC_TOOLBAR_EDIT, "Edit", 1),
+        (IDC_TOOLBAR_VIEW, "View", 2),
+    ];
+    for (id, text, slot) in labels {
+        let x = scale_for_dpi(toolbar_row, 4) + slot * label_width;
+        let hwnd_btn = unsafe {
+            CreateWindowExW(
+                Default::default(),
+                w!("Button"),
+                &HSTRING::from(text),
+                label_style,
+                x,
+                y,
+                label_width,
+                label_height,
+                toolbar_row,
+                menu_id(id),
+                instance,
+                None,
+            )
+        };
+        dark_mode::disable_visual_styles(hwnd_btn);
+    }
+
+    // Icon buttons are positioned right-aligned by toolbar_row_wndproc's
+    // WM_SIZE handler; the x here is just a harmless initial placement.
+    let icons: [(usize, &str, PCWSTR); 3] = [
+        (IDC_TOOLBAR_NEW, "\u{E7C3}", w!("New File (Ctrl+N)")),
+        (IDC_TOOLBAR_SAVE_AS, "\u{E792}", w!("Save As...")),
+        (IDC_TOOLBAR_PRINT, "\u{E749}", w!("Print")),
+    ];
+    let font = toolbar_icon_font(toolbar_row);
+    let tooltip = create_toolbar_tooltip(toolbar_row, instance);
+    for (id, glyph, tip) in icons {
+        let hwnd_btn = unsafe {
+            CreateWindowExW(
+                Default::default(),
+                w!("Button"),
+                &HSTRING::from(glyph),
+                label_style,
+                0,
+                y,
+                icon_width,
+                label_height,
+                toolbar_row,
+                menu_id(id),
+                instance,
+                None,
+            )
+        };
+        dark_mode::disable_visual_styles(hwnd_btn);
+        unsafe {
+            SendMessageW(hwnd_btn, WM_SETFONT, WPARAM(font.0 as usize), LPARAM(1));
+        }
+        add_tooltip(tooltip, toolbar_row, hwnd_btn, tip);
+    }
+    Ok(())
+}
+
+/// Creates the shared tooltip control that all toolbar-row icon buttons
+/// register with. Returns `HWND(0)` on failure (tooltips are cosmetic, so
+/// callers just skip registering on failure rather than treating it as
+/// fatal).
+fn create_toolbar_tooltip(toolbar_row: HWND, instance: HINSTANCE) -> HWND {
+    unsafe {
+        CreateWindowExW(
+            Default::default(),
+            TOOLTIPS_CLASSW,
+            PCWSTR::null(),
+            WINDOW_STYLE(WS_POPUP.0 | TTS_ALWAYSTIP),
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            toolbar_row,
+            HMENU(0),
+            instance,
+            None,
+        )
+    }
+}
+
+/// Registers `target` as a tool on `tooltip`, showing `text` on hover.
+/// `text` must be static (the tooltip control keeps the pointer, not a
+/// copy, and re-reads it on every display).
+fn add_tooltip(tooltip: HWND, owner: HWND, target: HWND, text: PCWSTR) {
+    if tooltip.0 == 0 {
+        return;
+    }
+    let mut info = TTTOOLINFOW {
+        cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32,
+        uFlags: TTF_IDISHWND | TTF_SUBCLASS,
+        hwnd: owner,
+        uId: target.0 as usize,
+        lpszText: PWSTR(text.as_ptr() as *mut u16),
+        ..Default::default()
+    };
+    unsafe {
+        SendMessageW(
+            tooltip,
+            TTM_ADDTOOLW,
+            WPARAM(0),
+            LPARAM(&mut info as *mut TTTOOLINFOW as isize),
+        );
+    }
+}
+
+/// Paints one `BS_OWNERDRAW` toolbar-row button: background (dark theme
+/// color or `COLOR_BTNFACE`), a slightly different shade while pressed, and
+/// centered text/glyph. Standard `BS_PUSHBUTTON` ignores `WM_CTLCOLORBTN`'s
+/// brush for its face regardless of theme, so this is the only way to get a
+/// genuinely dark-themed button here.
+fn draw_toolbar_row_button(toolbar_row: HWND, lparam: LPARAM) {
+    let dis = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
+    let pressed = (dis.itemState.0 & ODS_SELECTED.0) != 0;
+    let theme = dialog_dark_theme(toolbar_row);
+
+    let bg = match &theme {
+        Some(theme) if pressed => dark_mode::cached_solid_brush(theme.hover_bg),
+        Some(theme) => dark_mode::cached_solid_brush(theme.bg),
+        None => unsafe { GetSysColorBrush(COLOR_BTNFACE) },
+    };
+    unsafe {
+        let _ = FillRect(dis.hDC, &dis.rcItem, bg);
+    }
+
+    let is_icon = matches!(
+        dis.CtlID as usize,
+        IDC_TOOLBAR_NEW | IDC_TOOLBAR_SAVE_AS | IDC_TOOLBAR_PRINT
+    );
+    let font = if is_icon {
+        toolbar_icon_font(toolbar_row)
+    } else {
+        HFONT(unsafe { GetStockObject(DEFAULT_GUI_FONT) }.0)
+    };
+    let old_font = unsafe { SelectObject(dis.hDC, HGDIOBJ(font.0)) };
+
+    let text_color = theme.map(|theme| theme.fg).unwrap_or(COLORREF(0x00000000));
+    unsafe {
+        SetTextColor(dis.hDC, text_color);
+        SetBkMode(dis.hDC, TRANSPARENT);
+    }
+
+    let text = {
+        let len = unsafe { GetWindowTextLengthW(dis.hwndItem) } as usize;
+        let mut buffer = vec![0u16; len + 1];
+        unsafe {
+            let _ = GetWindowTextW(dis.hwndItem, buffer.as_mut_slice());
+        }
+        wide_to_string(&buffer).unwrap_or_default()
+    };
+    let mut text_wide: Vec<u16> = text.encode_utf16().collect();
+    let mut rect = dis.rcItem;
+    if !is_icon {
+        // DT_VCENTER centers on each font's own metrics, and the Segoe
+        // Fluent Icons glyphs sit lower in their em-box than regular UI
+        // text does in DEFAULT_GUI_FONT — so at the same rect, label text
+        // visually sits higher than the icons beside it. Nudge it down a
+        // couple pixels to match.
+        let nudge = scale_for_dpi(toolbar_row, 2);
+        rect.top += nudge;
+        rect.bottom += nudge;
+    }
+    unsafe {
+        DrawTextW(
+            dis.hDC,
+            &mut text_wide,
+            &mut rect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        );
+        SelectObject(dis.hDC, old_font);
+    }
+}
+
+/// Repositions the New/Save As/Print icon buttons to hug the right edge of
+/// the toolbar row, called from `WM_SIZE`.
+fn layout_toolbar_row_icons(toolbar_row: HWND) {
+    let mut rect = windows::Win32::Foundation::RECT::default();
+    unsafe {
+        let _ = GetClientRect(toolbar_row, &mut rect);
+    }
+    let width = rect.right - rect.left;
+    let icon_width = scale_for_dpi(toolbar_row, 32);
+    let label_height = scale_for_dpi(toolbar_row, 26);
+    let y = (TOOLBAR_ROW_HEIGHT - 26) / 2;
+    let y = scale_for_dpi(toolbar_row, y.max(0));
+    let margin = scale_for_dpi(toolbar_row, 4);
+    let ids = [IDC_TOOLBAR_PRINT, IDC_TOOLBAR_SAVE_AS, IDC_TOOLBAR_NEW];
+    let mut x = width - margin - icon_width;
+    for id in ids {
+        let child = unsafe { GetDlgItem(toolbar_row, id as i32) };
+        if child.0 != 0 {
+            unsafe {
+                let _ = SetWindowPos(
+                    child,
+                    HWND(0),
+                    x,
+                    y,
+                    icon_width,
+                    label_height,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+        }
+        x -= icon_width;
+    }
+}
+
+unsafe extern "system" fn toolbar_row_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        WM_ERASEBKGND => {
+            let mut rect = windows::Win32::Foundation::RECT::default();
+            unsafe {
+                let _ = GetClientRect(hwnd, &mut rect);
+            }
+            let theme = dialog_dark_theme(hwnd);
+            let brush = match theme {
+                Some(theme) => dark_mode::cached_solid_brush(theme.bg),
+                None => unsafe { GetSysColorBrush(COLOR_BTNFACE) },
+            };
+            unsafe {
+                let _ = FillRect(HDC(wparam.0 as isize), &rect, brush);
+            }
+            // Dark theme colors the toolbar row the same background as the
+            // editor/tabs below it, so without a seam the row visually
+            // blends into the content area. theme.border (used for the tab
+            // strip elsewhere) is too close to the dark bg to read as a
+            // seam here, so use a brighter dedicated shade and scale the
+            // line thickness with DPI so it stays visible at high scaling.
+            if theme.is_some() {
+                let thickness = scale_for_dpi(hwnd, 1).max(1);
+                let mut border_rect = rect;
+                border_rect.top = border_rect.bottom - thickness;
+                let border_brush = dark_mode::cached_solid_brush(color_ref(90, 90, 90));
+                unsafe {
+                    let _ = FillRect(HDC(wparam.0 as isize), &border_rect, border_brush);
+                }
+            }
+            LRESULT(1)
+        }
+        WM_CTLCOLORBTN | WM_CTLCOLORDLG | WM_CTLCOLORSTATIC => {
+            if let Some(r) = dialog_ctl_color(hwnd, HDC(wparam.0 as isize), false) {
+                return r;
+            }
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
+        WM_DRAWITEM => {
+            draw_toolbar_row_button(hwnd, lparam);
+            LRESULT(1)
+        }
+        WM_SIZE => {
+            layout_toolbar_row_icons(hwnd);
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            let main_hwnd = unsafe { HWND(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
+            let id = loword(wparam.0) as usize;
+            let submenu_index = match id {
+                IDC_TOOLBAR_FILE => Some(0),
+                IDC_TOOLBAR_EDIT => Some(1),
+                IDC_TOOLBAR_VIEW => Some(2),
+                _ => None,
+            };
+            if let Some(index) = submenu_index {
+                if let Some(state) = get_state(main_hwnd) {
+                    let submenu = unsafe { GetSubMenu(state.main_menu, index) };
+                    let button = unsafe { GetDlgItem(hwnd, id as i32) };
+                    let mut rect = windows::Win32::Foundation::RECT::default();
+                    unsafe {
+                        let _ = GetWindowRect(button, &mut rect);
+                        let _ = SetForegroundWindow(main_hwnd);
+                        TrackPopupMenu(
+                            submenu,
+                            TPM_LEFTALIGN | TPM_TOPALIGN,
+                            rect.left,
+                            rect.bottom,
+                            0,
+                            main_hwnd,
+                            None,
+                        );
+                        let _ = PostMessageW(main_hwnd, WM_NULL, WPARAM(0), LPARAM(0));
+                    }
+                }
+                return LRESULT(0);
+            }
+            match id {
+                IDC_TOOLBAR_NEW => unsafe {
+                    let _ = PostMessageW(
+                        main_hwnd,
+                        WM_COMMAND,
+                        WPARAM(IDM_FILE_NEW as usize),
+                        LPARAM(0),
+                    );
+                },
+                IDC_TOOLBAR_SAVE_AS => unsafe {
+                    let _ = PostMessageW(
+                        main_hwnd,
+                        WM_COMMAND,
+                        WPARAM(IDM_FILE_SAVE_AS as usize),
+                        LPARAM(0),
+                    );
+                },
+                IDC_TOOLBAR_PRINT => unsafe {
+                    let _ = PostMessageW(
+                        main_hwnd,
+                        WM_COMMAND,
+                        WPARAM(IDM_FILE_PRINT as usize),
+                        LPARAM(0),
+                    );
+                },
+                _ => {}
+            }
+            LRESULT(0)
+        }
+        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
 }
 
 #[allow(clippy::manual_dangling_ptr)]
@@ -1251,7 +1661,17 @@ fn create_accelerators() -> Result<HACCEL> {
             key: VK_PRIOR,
             cmd: CMD_TAB_PREV,
         },
-    ];
+        ACCEL {
+            fVirt: FVIRTKEY | FCONTROL,
+            key: VK_P,
+            cmd: IDM_FILE_PRINT,
+        },
+    ]
+    // CreateAcceleratorTableW intermittently failed with 0x800703E6 in
+    // --release builds once this array reached 35 stack-allocated entries
+    // (size-dependent, content-independent, release-only miscompilation).
+    // Heap-allocating it sidesteps that.
+    .to_vec();
 
     let accel = unsafe { CreateAcceleratorTableW(&accels)? };
     Ok(accel)
@@ -1484,6 +1904,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 IDM_FILE_RELOAD => {
                     if let Some(state) = get_state(hwnd)
                         && let Err(err) = reload_active_from_disk(hwnd, state)
+                    {
+                        show_error("Rivet error", &err.to_string());
+                    }
+                    LRESULT(0)
+                }
+                IDM_FILE_PRINT => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Err(err) = print_active_document(hwnd, state)
                     {
                         show_error("Rivet error", &err.to_string());
                     }
@@ -2244,6 +2672,33 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     dark_mode::apply_to_window(hwnd, ui_settings.editor_dark);
 
     let (icon_big, icon_small) = load_main_icons(instance);
+
+    let main_menu = create_menu().map_err(|err| AppError::new(format!("create_menu: {err}")))?;
+
+    let toolbar_row = unsafe {
+        CreateWindowExW(
+            Default::default(),
+            TOOLBAR_ROW_CLASS,
+            PCWSTR::null(),
+            window_style(WS_CHILD.0 | WS_VISIBLE.0 | WS_CLIPSIBLINGS.0),
+            0,
+            0,
+            0,
+            0,
+            hwnd,
+            HMENU(0),
+            instance,
+            None,
+        )
+    };
+    if toolbar_row.0 == 0 {
+        return Err(AppError::win32("CreateWindowExW(ToolbarRow)"));
+    }
+    unsafe {
+        SetWindowLongPtrW(toolbar_row, GWLP_USERDATA, hwnd.0);
+    }
+    create_toolbar_row_buttons(toolbar_row, instance)?;
+
     let top_tabs = unsafe {
         CreateWindowExW(
             Default::default(),
@@ -2445,6 +2900,8 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         go_to_line_dialog: None,
         find_in_files: None,
         status_message: None,
+        main_menu,
+        toolbar_row,
     };
 
     let mut state = restore_session(hwnd, state)?;
@@ -2471,9 +2928,9 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     layout_children(hwnd, &mut state);
     apply_always_on_top(hwnd, state.always_on_top);
     update_status(&state);
-    update_tab_layout_menu(hwnd, state.tab_host.placement);
+    update_tab_layout_menu(state.main_menu, state.tab_host.placement);
     update_wrap_menu(hwnd, &state);
-    update_editor_dark_menu(hwnd, state.editor_dark);
+    update_editor_dark_menu(state.main_menu, state.editor_dark);
     update_always_on_top_menu(hwnd, &state);
     rebuild_recent_files_menu(hwnd, &state);
 
@@ -2505,6 +2962,7 @@ fn layout_children(hwnd: HWND, state: &mut AppState) {
     let width = rect.right - rect.left;
     let height = rect.bottom - rect.top;
     let status_height = status_rect.bottom - status_rect.top;
+    let toolbar_height = scale_for_dpi(hwnd, TOOLBAR_ROW_HEIGHT);
     let tab_height = match state.tab_host.placement {
         TabPlacement::Top => tab_bar_height(state).max(0),
         TabPlacement::Left | TabPlacement::Right => 0,
@@ -2517,7 +2975,7 @@ fn layout_children(hwnd: HWND, state: &mut AppState) {
             adjusted
         }
     };
-    let editor_height = (height - status_height - tab_height).max(0);
+    let editor_height = (height - toolbar_height - status_height - tab_height).max(0);
     let editor_width = match state.tab_host.placement {
         TabPlacement::Top => width.max(0),
         TabPlacement::Left | TabPlacement::Right => {
@@ -2537,10 +2995,19 @@ fn layout_children(hwnd: HWND, state: &mut AppState) {
 
     unsafe {
         let _ = SetWindowPos(
-            state.tab_host.top_tabs,
+            state.toolbar_row,
             HWND(0),
             0,
             0,
+            width,
+            toolbar_height,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+        let _ = SetWindowPos(
+            state.tab_host.top_tabs,
+            HWND(0),
+            0,
+            toolbar_height,
             width,
             tab_height,
             SWP_NOZORDER | SWP_NOACTIVATE,
@@ -2549,18 +3016,18 @@ fn layout_children(hwnd: HWND, state: &mut AppState) {
             state.tab_host.vertical_tabs,
             HWND(0),
             list_left,
-            0,
+            toolbar_height,
             list_width,
-            height - status_height,
+            height - toolbar_height - status_height,
             SWP_NOZORDER | SWP_NOACTIVATE,
         );
         let _ = SetWindowPos(
             state.tab_host.splitter,
             HWND(0),
             splitter_left,
-            0,
+            toolbar_height,
             TAB_SPLITTER_WIDTH,
-            height - status_height,
+            height - toolbar_height - status_height,
             SWP_NOZORDER | SWP_NOACTIVATE,
         );
         let _ = SetWindowPos(
@@ -2578,7 +3045,7 @@ fn layout_children(hwnd: HWND, state: &mut AppState) {
                 doc.editor,
                 HWND(0),
                 editor_left,
-                tab_height,
+                toolbar_height + tab_height,
                 editor_width,
                 editor_height,
                 SWP_NOZORDER | SWP_NOACTIVATE,
@@ -2916,6 +3383,210 @@ fn reload_active_from_disk(hwnd: HWND, state: &mut AppState) -> Result<()> {
         return Ok(());
     }
     reload_doc_from_path(hwnd, state, index, &path)
+}
+
+/// Prints the active document via the system Print dialog. Output is
+/// always black text on white (ignoring dark mode and syntax colors), and
+/// forces word wrap for the print job specifically so long lines aren't
+/// clipped at the page edge, regardless of the editor's live word-wrap
+/// setting. Line numbers print if the View > Line Numbers toggle is on,
+/// since that margin renders as part of the document like on screen. Each
+/// page gets a header (filename, centered) and footer ("Page X of Y",
+/// centered).
+fn print_active_document(hwnd: HWND, state: &AppState) -> Result<()> {
+    let Some(doc_tab) = state.docs.get(state.active) else {
+        return Ok(());
+    };
+    let editor = doc_tab.editor;
+    let filename = tab_base_name(doc_tab);
+    let date_str = current_print_date_string();
+
+    let mut pd = PRINTDLGW {
+        lStructSize: std::mem::size_of::<PRINTDLGW>() as u32,
+        hwndOwner: hwnd,
+        Flags: PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS,
+        ..Default::default()
+    };
+    let ok = unsafe { PrintDlgW(&mut pd) };
+    if !ok.as_bool() || pd.hDC.0 == 0 {
+        // User cancelled, or the dialog failed to hand back a device
+        // context — nothing to print.
+        return Ok(());
+    }
+    let print_hdc = pd.hDC;
+
+    scintilla::prepare_for_print(editor);
+
+    // The printer HDC's own (0, 0) origin already sits at the printable
+    // area's top-left corner, so measuring margins from HORZRES/VERTRES
+    // (the printable area) needs no PHYSICALOFFSET correction — mixing the
+    // two previously pushed the header/footer bands off the top of the
+    // page on printers with a nonzero physical offset.
+    let page_w = unsafe { GetDeviceCaps(print_hdc, HORZRES) };
+    let page_h = unsafe { GetDeviceCaps(print_hdc, VERTRES) };
+    let dpi_x = unsafe { GetDeviceCaps(print_hdc, LOGPIXELSX) };
+    let dpi_y = unsafe { GetDeviceCaps(print_hdc, LOGPIXELSY) };
+
+    let page_rect = scintilla::PrintRect {
+        left: 0,
+        top: 0,
+        right: page_w,
+        bottom: page_h,
+    };
+    // 1" margins.
+    let left = dpi_x;
+    let right = page_w - dpi_x;
+    let band_height = dpi_y / 3;
+    let header_top = dpi_y;
+    let content_top = header_top + band_height;
+    let footer_top = page_h - dpi_y - band_height;
+    let content_rect = scintilla::PrintRect {
+        left,
+        top: content_top,
+        right,
+        bottom: footer_top,
+    };
+
+    let doc_len = scintilla::get_length(editor);
+
+    // Dry-run pass (draw = false) to count total pages up front, needed for
+    // the "Page X of Y" footer before the real job starts spooling.
+    let mut total_pages = 0usize;
+    let mut pos = 0usize;
+    while pos < doc_len {
+        let next = scintilla::format_range(
+            editor,
+            false,
+            print_hdc.0,
+            content_rect,
+            page_rect,
+            pos,
+            doc_len,
+        );
+        total_pages += 1;
+        if next <= pos {
+            break;
+        }
+        pos = next;
+    }
+    scintilla::end_format_range(editor);
+    let total_pages = total_pages.max(1);
+
+    let doc_name = to_wide(&filename);
+    let doc_info = DOCINFOW {
+        cbSize: std::mem::size_of::<DOCINFOW>() as i32,
+        lpszDocName: PCWSTR(doc_name.as_ptr()),
+        ..Default::default()
+    };
+    let job_started = unsafe { StartDocW(print_hdc, &doc_info) } > 0;
+    if !job_started {
+        unsafe {
+            let _ = DeleteDC(print_hdc);
+        }
+        return Err(AppError::new("Failed to start print job.".to_string()));
+    }
+
+    pos = 0;
+    let mut page_num = 1usize;
+    loop {
+        unsafe {
+            StartPage(print_hdc);
+        }
+        draw_print_band(
+            print_hdc,
+            left,
+            right,
+            header_top,
+            dpi_y,
+            &format!("{filename} \u{2014} {date_str}"),
+        );
+        draw_print_band(
+            print_hdc,
+            left,
+            right,
+            footer_top,
+            dpi_y,
+            &format!("Page {page_num} of {total_pages}"),
+        );
+        let next = scintilla::format_range(
+            editor,
+            true,
+            print_hdc.0,
+            content_rect,
+            page_rect,
+            pos,
+            doc_len,
+        );
+        unsafe {
+            EndPage(print_hdc);
+        }
+        if next <= pos || next >= doc_len {
+            break;
+        }
+        pos = next;
+        page_num += 1;
+    }
+    unsafe {
+        EndDoc(print_hdc);
+    }
+    scintilla::end_format_range(editor);
+    unsafe {
+        let _ = DeleteDC(print_hdc);
+    }
+    Ok(())
+}
+
+/// Draws one line of header/footer text centered between `left` and
+/// `right` at vertical position `y`, in plain black — used for both the
+/// filename (header) and page number (footer) bands.
+fn draw_print_band(hdc: HDC, left: i32, right: i32, y: i32, dpi_y: i32, text: &str) {
+    let font = print_band_font(dpi_y);
+    let old_font = unsafe { SelectObject(hdc, HGDIOBJ(font.0)) };
+    unsafe {
+        SetTextColor(hdc, COLORREF(0x00000000));
+        SetBkMode(hdc, TRANSPARENT);
+    }
+    let mut rect = RECT {
+        left,
+        top: y,
+        right,
+        bottom: y + dpi_y / 4,
+    };
+    // DrawTextW takes cchtext from this slice's exact length, so it must
+    // NOT be null-terminated (to_wide() is, for null-terminated Win32 APIs
+    // like DOCINFOW below) — a trailing NUL here gets counted as an extra
+    // character. DT_NOCLIP keeps this rect (used only for centering) from
+    // truncating the text against its own bounds if the estimate is off.
+    let mut text_wide: Vec<u16> = text.encode_utf16().collect();
+    unsafe {
+        DrawTextW(
+            hdc,
+            &mut text_wide,
+            &mut rect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP,
+        );
+        SelectObject(hdc, old_font);
+    }
+}
+
+fn print_band_font(dpi_y: i32) -> HFONT {
+    // 10pt, converted to device units for this printer's actual resolution
+    // (`-MulDiv`-style point-to-pixel conversion) rather than a fixed pixel
+    // size, since a printer's LOGPIXELSY is usually far higher than a
+    // screen's.
+    let height = -(10 * dpi_y / 72);
+    HFONT(unsafe { CreateFontW(height, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, w!("Segoe UI")) }.0)
+}
+
+/// Current local date as "YYYY-MM-DD", for the print header.
+fn current_print_date_string() -> String {
+    let st = unsafe { GetLocalTime() };
+    format!("{:04}-{:02}-{:02}", st.wYear, st.wMonth, st.wDay)
+}
+
+/// Null-terminated UTF-16 buffer for Win32 string APIs.
+fn to_wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 fn prompt_discard_and_reload(hwnd: HWND) -> bool {
@@ -6353,8 +7024,7 @@ fn scale_for_dpi(hwnd: HWND, value: i32) -> i32 {
 }
 
 /// Locate the (initially empty) "Recent Files" popup inside the File menu.
-fn recent_files_submenu(hwnd: HWND) -> Option<HMENU> {
-    let bar = unsafe { GetMenu(hwnd) };
+fn recent_files_submenu(bar: HMENU) -> Option<HMENU> {
     if bar.0 == 0 {
         return None;
     }
@@ -6368,8 +7038,8 @@ fn recent_files_submenu(hwnd: HWND) -> Option<HMENU> {
 }
 
 /// Rewrite the Recent Files submenu from `state.ui_settings.recent_files`.
-fn rebuild_recent_files_menu(hwnd: HWND, state: &AppState) {
-    let Some(menu) = recent_files_submenu(hwnd) else {
+fn rebuild_recent_files_menu(_hwnd: HWND, state: &AppState) {
+    let Some(menu) = recent_files_submenu(state.main_menu) else {
         return;
     };
     unsafe {
@@ -6751,7 +7421,7 @@ fn handle_vertical_tab_custom_draw(state: &AppState, lparam: LPARAM) -> LRESULT 
 
 fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
     state.editor_dark = enabled;
-    update_editor_dark_menu(hwnd, enabled);
+    update_editor_dark_menu(state.main_menu, enabled);
     for doc_tab in &state.docs {
         apply_syntax_for_doc(doc_tab, enabled);
     }
@@ -6772,12 +7442,31 @@ fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
         );
     }
+    // The toolbar row (and its buttons) only reads the live dark-mode state
+    // at repaint time; nothing repaints it on its own when the setting
+    // changes, so force one here.
+    unsafe {
+        let _ = InvalidateRect(state.toolbar_row, None, true);
+        for id in [
+            IDC_TOOLBAR_FILE,
+            IDC_TOOLBAR_EDIT,
+            IDC_TOOLBAR_VIEW,
+            IDC_TOOLBAR_NEW,
+            IDC_TOOLBAR_SAVE_AS,
+            IDC_TOOLBAR_PRINT,
+        ] {
+            let child = GetDlgItem(state.toolbar_row, id as i32);
+            if child.0 != 0 {
+                let _ = InvalidateRect(child, None, true);
+            }
+        }
+    }
     persist_ui_settings(state);
 }
 
 fn set_tab_layout(hwnd: HWND, state: &mut AppState, layout: TabPlacement) {
     state.tab_host.placement = layout;
-    update_tab_layout_menu(hwnd, layout);
+    update_tab_layout_menu(state.main_menu, layout);
     if layout == TabPlacement::Top && state.tab_host.resizing {
         state.tab_host.resizing = false;
         unsafe {
@@ -6908,8 +7597,7 @@ fn apply_always_on_top(hwnd: HWND, enabled: bool) {
     }
 }
 
-fn update_editor_dark_menu(hwnd: HWND, enabled: bool) {
-    let menu = unsafe { GetMenu(hwnd) };
+fn update_editor_dark_menu(menu: HMENU, enabled: bool) {
     if menu.0 == 0 {
         return;
     }
@@ -6972,8 +7660,7 @@ fn destroy_tab_host_brush(state: &mut AppState) {
     }
 }
 
-fn update_tab_layout_menu(hwnd: HWND, layout: TabPlacement) {
-    let menu = unsafe { GetMenu(hwnd) };
+fn update_tab_layout_menu(menu: HMENU, layout: TabPlacement) {
     if menu.0 == 0 {
         return;
     }
@@ -6987,16 +7674,16 @@ fn update_tab_layout_menu(hwnd: HWND, layout: TabPlacement) {
     set_menu_check(menu, IDM_VIEW_TABS_VERTICAL_RIGHT, right);
 }
 
-fn update_wrap_menu(hwnd: HWND, state: &AppState) {
-    let menu = unsafe { GetMenu(hwnd) };
+fn update_wrap_menu(_hwnd: HWND, state: &AppState) {
+    let menu = state.main_menu;
     if menu.0 == 0 {
         return;
     }
     set_menu_check(menu, IDM_VIEW_WORD_WRAP, state.word_wrap_enabled);
 }
 
-fn update_file_menu(hwnd: HWND, state: &AppState) {
-    let menu = unsafe { GetMenu(hwnd) };
+fn update_file_menu(_hwnd: HWND, state: &AppState) {
+    let menu = state.main_menu;
     if menu.0 == 0 {
         return;
     }
@@ -7010,8 +7697,8 @@ fn update_file_menu(hwnd: HWND, state: &AppState) {
     }
 }
 
-fn update_copy_path_menu(hwnd: HWND, state: &AppState) {
-    let menu = unsafe { GetMenu(hwnd) };
+fn update_copy_path_menu(_hwnd: HWND, state: &AppState) {
+    let menu = state.main_menu;
     if menu.0 == 0 {
         return;
     }
@@ -7042,8 +7729,8 @@ fn update_copy_path_menu(hwnd: HWND, state: &AppState) {
     }
 }
 
-fn update_always_on_top_menu(hwnd: HWND, state: &AppState) {
-    let menu = unsafe { GetMenu(hwnd) };
+fn update_always_on_top_menu(_hwnd: HWND, state: &AppState) {
+    let menu = state.main_menu;
     if menu.0 == 0 {
         return;
     }
@@ -7052,8 +7739,8 @@ fn update_always_on_top_menu(hwnd: HWND, state: &AppState) {
 
 /// Checks the Language-menu item matching the active tab's lexer: "Auto" when no
 /// override is set, otherwise the forced language.
-fn update_language_menu(hwnd: HWND, state: &AppState) {
-    let menu = unsafe { GetMenu(hwnd) };
+fn update_language_menu(_hwnd: HWND, state: &AppState) {
+    let menu = state.main_menu;
     if menu.0 == 0 {
         return;
     }
