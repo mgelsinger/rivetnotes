@@ -16,6 +16,7 @@ pub const DEFAULT_REMEMBER_SESSION: bool = true;
 pub const DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP: bool = true;
 pub const DEFAULT_BACKUP_INTERVAL_SECONDS: u32 = 7;
 pub const DEFAULT_WORD_WRAP_ENABLED: bool = true;
+pub const DEFAULT_LINE_NUMBERS_ENABLED: bool = true;
 pub const DEFAULT_ALWAYS_ON_TOP: bool = false;
 
 const APP_DIR_NAME: &str = "Rivet";
@@ -109,6 +110,8 @@ pub struct SessionData {
     pub backup_interval_seconds: u32,
     #[serde(default = "default_word_wrap_enabled")]
     pub word_wrap_enabled: bool,
+    #[serde(default = "default_line_numbers_enabled")]
+    pub line_numbers_enabled: bool,
     #[serde(default = "default_always_on_top")]
     pub always_on_top: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -128,6 +131,7 @@ impl SessionData {
             session_snapshot_periodic_backup: DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP,
             backup_interval_seconds: DEFAULT_BACKUP_INTERVAL_SECONDS,
             word_wrap_enabled: DEFAULT_WORD_WRAP_ENABLED,
+            line_numbers_enabled: DEFAULT_LINE_NUMBERS_ENABLED,
             always_on_top: DEFAULT_ALWAYS_ON_TOP,
             window_placement: None,
             active_tab_id: None,
@@ -318,6 +322,10 @@ fn default_word_wrap_enabled() -> bool {
     DEFAULT_WORD_WRAP_ENABLED
 }
 
+fn default_line_numbers_enabled() -> bool {
+    DEFAULT_LINE_NUMBERS_ENABLED
+}
+
 fn default_always_on_top() -> bool {
     DEFAULT_ALWAYS_ON_TOP
 }
@@ -387,6 +395,7 @@ mod tests {
                 session_snapshot_periodic_backup: true,
                 backup_interval_seconds: 7,
                 word_wrap_enabled: true,
+                line_numbers_enabled: true,
                 always_on_top: true,
                 window_placement: Some(WindowPlacementData {
                     x: 64,
@@ -658,6 +667,7 @@ mod tests {
                 session_snapshot_periodic_backup: true,
                 backup_interval_seconds: 7,
                 word_wrap_enabled: true,
+                line_numbers_enabled: true,
                 always_on_top: false,
                 window_placement: None,
                 active_tab_id: Some(id),

@@ -147,6 +147,7 @@ const CMD_EDITOR_EXPAND_ALL: u16 = 353;
 const IDM_VIEW_ZOOM_IN: u16 = 354;
 const IDM_VIEW_ZOOM_OUT: u16 = 355;
 const IDM_VIEW_ZOOM_RESET: u16 = 356;
+const IDM_VIEW_LINE_NUMBERS: u16 = 358;
 // Language (syntax) override commands. CMD_LANG_AUTO clears the per-tab override
 // and falls back to extension detection; the rest force a specific lexer.
 const CMD_LANG_AUTO: u16 = 360;
@@ -433,6 +434,7 @@ struct AppState {
     session_snapshot_periodic_backup: bool,
     backup_interval_seconds: u32,
     word_wrap_enabled: bool,
+    line_numbers_enabled: bool,
     next_untitled_index: usize,
     search_state: SearchState,
     search_dialog_mode: SearchDialogMode,
@@ -868,6 +870,12 @@ fn create_menu() -> Result<HMENU> {
             MF_STRING,
             IDM_VIEW_WORD_WRAP as usize,
             w!("Word Wrap"),
+        )?;
+        AppendMenuW(
+            view_menu,
+            MF_STRING,
+            IDM_VIEW_LINE_NUMBERS as usize,
+            w!("Line Numbers"),
         )?;
         AppendMenuW(
             view_menu,
@@ -1770,6 +1778,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
+                IDM_VIEW_LINE_NUMBERS => {
+                    if let Some(state) = get_state(hwnd) {
+                        toggle_line_numbers(hwnd, state);
+                    }
+                    LRESULT(0)
+                }
                 IDM_VIEW_ZOOM_IN => {
                     if let Some(state) = get_state(hwnd) {
                         adjust_zoom(state, 1);
@@ -2093,7 +2107,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                                 scintilla::get_current_pos(doc_tab.editor) as i64;
                         }
                         let line_count = scintilla::line_count(nmhdr.hwndFrom);
-                        scintilla::set_line_number_margin_width(nmhdr.hwndFrom, line_count);
+                        scintilla::apply_line_number_margin(
+                            nmhdr.hwndFrom,
+                            state.line_numbers_enabled,
+                            line_count,
+                        );
                         if let Some(index) = doc_index_by_hwnd(state, nmhdr.hwndFrom)
                             && index == state.active
                         {
@@ -2430,6 +2448,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         session_snapshot_periodic_backup: session::DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP,
         backup_interval_seconds: session::DEFAULT_BACKUP_INTERVAL_SECONDS,
         word_wrap_enabled: session::DEFAULT_WORD_WRAP_ENABLED,
+        line_numbers_enabled: session::DEFAULT_LINE_NUMBERS_ENABLED,
         next_untitled_index: 1,
         search_state: SearchState {
             find_text: String::new(),
@@ -2473,6 +2492,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     update_status(&state);
     update_tab_layout_menu(hwnd, state.tab_host.placement);
     update_wrap_menu(hwnd, &state);
+    update_line_numbers_menu(hwnd, &state);
     update_editor_dark_menu(hwnd, state.editor_dark);
     update_always_on_top_menu(hwnd, &state);
     rebuild_recent_files_menu(hwnd, &state);
@@ -2664,7 +2684,7 @@ fn open_path_new_tab(
         scintilla::set_eol_mode(doc_tab.editor, eol);
     }
 
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(&doc_tab, state.editor_dark, state.line_numbers_enabled);
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     select_tab(hwnd, state, index);
     apply_large_file_mode_restrictions(hwnd, state, index);
@@ -2810,7 +2830,7 @@ fn save_document_at(
                 state.ui_settings.large_file_disable_word_wrap,
             ),
         );
-        apply_syntax_for_doc(doc_tab, state.editor_dark);
+        apply_syntax_for_doc(doc_tab, state.editor_dark, state.line_numbers_enabled);
         scintilla::set_savepoint(doc_tab.editor);
         doc_tab.sticky_dirty = false;
         doc_tab.doc.is_dirty = false;
@@ -2883,7 +2903,7 @@ fn reload_doc_from_path(
             state.ui_settings.large_file_threshold_mb,
             state.ui_settings.large_file_disable_word_wrap,
         )?;
-        apply_syntax_for_doc(doc_tab, state.editor_dark);
+        apply_syntax_for_doc(doc_tab, state.editor_dark, state.line_numbers_enabled);
         scintilla::goto_pos(
             doc_tab.editor,
             caret.min(scintilla::get_length(doc_tab.editor)),
@@ -4239,10 +4259,10 @@ fn effective_lexer(doc_tab: &DocTab) -> scintilla::LexerKind {
         .unwrap_or_else(|| lexer_for_doc(&doc_tab.doc))
 }
 
-fn apply_syntax_for_doc(doc_tab: &DocTab, dark: bool) {
+fn apply_syntax_for_doc(doc_tab: &DocTab, dark: bool, line_numbers_enabled: bool) {
     let lexer = effective_lexer(doc_tab);
     scintilla::apply_lexer(doc_tab.editor, lexer, dark);
-    apply_editor_theme_overlays(doc_tab.editor, dark);
+    apply_editor_theme_overlays(doc_tab.editor, dark, line_numbers_enabled);
     if matches!(lexer, scintilla::LexerKind::Markdown) && !doc_tab.doc.large_file_mode {
         apply_markdown_fold_levels(doc_tab.editor);
     }
@@ -4253,6 +4273,7 @@ fn apply_syntax_for_doc(doc_tab: &DocTab, dark: bool) {
 fn set_language_override(state: &mut AppState, over: Option<scintilla::LexerKind>) {
     let index = state.active;
     let dark = state.editor_dark;
+    let line_numbers_enabled = state.line_numbers_enabled;
     let Some(doc_tab) = state.docs.get_mut(index) else {
         return;
     };
@@ -4260,7 +4281,7 @@ fn set_language_override(state: &mut AppState, over: Option<scintilla::LexerKind
         return;
     }
     doc_tab.lexer_override = over;
-    apply_syntax_for_doc(doc_tab, dark);
+    apply_syntax_for_doc(doc_tab, dark, line_numbers_enabled);
 }
 
 /// Maps a Language-menu command id to the override it selects: `Some(None)` for
@@ -4374,7 +4395,7 @@ fn apply_markdown_fold_levels(editor: HWND) {
     }
 }
 
-fn apply_editor_theme_overlays(editor: HWND, dark: bool) {
+fn apply_editor_theme_overlays(editor: HWND, dark: bool, line_numbers_enabled: bool) {
     let (smart_color, fill_alpha, outline_alpha) = if dark {
         (color_ref(90, 140, 220).0, 52usize, 80usize)
     } else {
@@ -4420,7 +4441,7 @@ fn apply_editor_theme_overlays(editor: HWND, dark: bool) {
     scintilla::set_line_number_style(editor, gutter_fg, gutter_bg);
     scintilla::set_fold_marker_colors(editor, marker_fg, marker_bg);
     let line_count = scintilla::line_count(editor);
-    scintilla::set_line_number_margin_width(editor, line_count);
+    scintilla::apply_line_number_margin(editor, line_numbers_enabled, line_count);
     let fold_width = scale_for_dpi(editor, 16);
     scintilla::set_fold_margin_width(editor, fold_width);
 }
@@ -4559,7 +4580,7 @@ fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Re
     scintilla::set_eol_mode(editor, doc_tab.doc.eol);
     scintilla::set_wrap_enabled(editor, state.word_wrap_enabled);
     scintilla::set_savepoint(editor);
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(&doc_tab, state.editor_dark, state.line_numbers_enabled);
 
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     select_tab(hwnd, state, index);
@@ -4616,7 +4637,7 @@ fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
         smart_highlight_truncated: false,
         lexer_override: None,
     };
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(&doc_tab, state.editor_dark, state.line_numbers_enabled);
     restore_strike_ranges(doc_tab.editor, &strike_ranges);
 
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
@@ -5499,6 +5520,7 @@ fn restore_session(hwnd: HWND, mut state: AppState) -> Result<AppState> {
     state.session_snapshot_periodic_backup = snapshot.session_snapshot_periodic_backup;
     state.backup_interval_seconds = snapshot.backup_interval_seconds.max(1);
     state.word_wrap_enabled = snapshot.word_wrap_enabled;
+    state.line_numbers_enabled = snapshot.line_numbers_enabled;
     state.always_on_top = snapshot.always_on_top;
     state.window_placement = snapshot.window_placement;
 
@@ -5656,7 +5678,7 @@ fn restore_session_entry(
     if doc_tab.doc.path.is_none() {
         update_next_untitled_index_from_name(state, &doc_tab.doc.display_name);
     }
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(&doc_tab, state.editor_dark, state.line_numbers_enabled);
     restore_strike_ranges(editor, &entry.strike_ranges);
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     if entry.cursor_pos >= 0 {
@@ -5694,6 +5716,7 @@ fn save_session_checkpoint(hwnd: HWND, state: &AppState) -> Result<()> {
         data.session_snapshot_periodic_backup = false;
         data.backup_interval_seconds = state.backup_interval_seconds.max(1);
         data.word_wrap_enabled = state.word_wrap_enabled;
+        data.line_numbers_enabled = state.line_numbers_enabled;
         data.always_on_top = state.always_on_top;
         data.window_placement = capture_window_placement(hwnd);
         data.active_tab_id = None;
@@ -5730,6 +5753,7 @@ fn save_session_checkpoint(hwnd: HWND, state: &AppState) -> Result<()> {
     data.session_snapshot_periodic_backup = state.session_snapshot_periodic_backup;
     data.backup_interval_seconds = state.backup_interval_seconds.max(1);
     data.word_wrap_enabled = state.word_wrap_enabled;
+    data.line_numbers_enabled = state.line_numbers_enabled;
     data.always_on_top = state.always_on_top;
     data.window_placement = capture_window_placement(hwnd);
     data.active_tab_id = state.docs.get(state.active).map(|doc| doc.doc.id);
@@ -6753,7 +6777,7 @@ fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
     state.editor_dark = enabled;
     update_editor_dark_menu(hwnd, enabled);
     for doc_tab in &state.docs {
-        apply_syntax_for_doc(doc_tab, enabled);
+        apply_syntax_for_doc(doc_tab, enabled, state.line_numbers_enabled);
     }
     if let Err(err) = update_tab_host_theme(state, enabled) {
         logging::log_error(&format!("tab_host_theme_update_failed err={err}"));
@@ -6848,6 +6872,25 @@ fn set_word_wrap(hwnd: HWND, state: &mut AppState, enabled: bool) {
     update_wrap_menu(hwnd, state);
     if let Err(err) = save_session_checkpoint(hwnd, state) {
         logging::log_error(&format!("session_save_after_wrap_toggle_failed err={err}"));
+    }
+}
+
+fn toggle_line_numbers(hwnd: HWND, state: &mut AppState) {
+    let enabled = !state.line_numbers_enabled;
+    set_line_numbers(hwnd, state, enabled);
+}
+
+fn set_line_numbers(hwnd: HWND, state: &mut AppState, enabled: bool) {
+    state.line_numbers_enabled = enabled;
+    for doc_tab in &state.docs {
+        let line_count = scintilla::line_count(doc_tab.editor);
+        scintilla::apply_line_number_margin(doc_tab.editor, enabled, line_count);
+    }
+    update_line_numbers_menu(hwnd, state);
+    if let Err(err) = save_session_checkpoint(hwnd, state) {
+        logging::log_error(&format!(
+            "session_save_after_line_numbers_toggle_failed err={err}"
+        ));
     }
 }
 
@@ -6993,6 +7036,14 @@ fn update_wrap_menu(hwnd: HWND, state: &AppState) {
         return;
     }
     set_menu_check(menu, IDM_VIEW_WORD_WRAP, state.word_wrap_enabled);
+}
+
+fn update_line_numbers_menu(hwnd: HWND, state: &AppState) {
+    let menu = unsafe { GetMenu(hwnd) };
+    if menu.0 == 0 {
+        return;
+    }
+    set_menu_check(menu, IDM_VIEW_LINE_NUMBERS, state.line_numbers_enabled);
 }
 
 fn update_file_menu(hwnd: HWND, state: &AppState) {

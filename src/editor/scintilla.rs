@@ -501,6 +501,16 @@ pub fn set_line_number_style(hwnd: HWND, fore_rgb: u32, back_rgb: u32) {
     send_message(hwnd, SCI_STYLESETBACK, STYLE_LINENUMBER, back_rgb as isize);
 }
 
+/// Sets the line-number margin's width to fit `total_lines`, or collapses
+/// it to zero (hiding it) when `enabled` is false.
+pub fn apply_line_number_margin(hwnd: HWND, enabled: bool, total_lines: usize) {
+    if enabled {
+        set_line_number_margin_width(hwnd, total_lines);
+    } else {
+        send_message(hwnd, SCI_SETMARGINWIDTHN, 0, 0);
+    }
+}
+
 pub fn set_line_number_margin_width(hwnd: HWND, total_lines: usize) {
     let digits = digit_count(total_lines.max(1)).max(3);
     let sample: String = "9".repeat(digits);
