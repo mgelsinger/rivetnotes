@@ -17,6 +17,7 @@ use crate::error::{AppError, Result};
 const SCI_SETCODEPAGE: u32 = 2037;
 const SCI_SETTEXT: u32 = 2181;
 const SCI_GETTEXT: u32 = 2182;
+const SCI_GETTEXTRANGEFULL: u32 = 2039;
 const SCI_INSERTTEXT: u32 = 2003;
 const SCI_GETLENGTH: u32 = 2006;
 const SCI_GETCHARAT: u32 = 2007;
@@ -647,6 +648,33 @@ pub fn get_text(hwnd: HWND) -> Result<String> {
     String::from_utf8(buffer).map_err(|err| AppError::new(format!("Invalid UTF-8 text: {err}")))
 }
 
+/// Retrieve only the requested UTF-8 byte range, on the owning UI thread.
+pub fn get_text_range(hwnd: HWND, start: usize, end: usize) -> Result<String> {
+    #[repr(C)]
+    struct TextRange {
+        start: isize,
+        end: isize,
+        text: *mut u8,
+    }
+    if end < start || end > get_length(hwnd) {
+        return Err(AppError::new("Invalid editor text range."));
+    }
+    let mut bytes = vec![0u8; end - start + 1];
+    let mut range = TextRange {
+        start: start as isize,
+        end: end as isize,
+        text: bytes.as_mut_ptr(),
+    };
+    send_message(
+        hwnd,
+        SCI_GETTEXTRANGEFULL,
+        0,
+        &mut range as *mut TextRange as isize,
+    );
+    bytes.truncate(end - start);
+    String::from_utf8(bytes).map_err(|err| AppError::new(format!("Invalid UTF-8 text: {err}")))
+}
+
 pub fn get_current_pos(hwnd: HWND) -> usize {
     send_message(hwnd, SCI_GETCURRENTPOS, 0, 0).0 as usize
 }
@@ -900,6 +928,13 @@ pub fn configure_strike_indicator(hwnd: HWND, indicator: usize, fore_rgb: u32) {
     send_message(hwnd, SCI_INDICSETSTYLE, indicator, INDIC_STRIKE as isize);
     send_message(hwnd, SCI_INDICSETFORE, indicator, fore_rgb as isize);
     send_message(hwnd, SCI_INDICSETUNDER, indicator, 0);
+}
+
+pub fn configure_spelling_indicator(hwnd: HWND, indicator: usize, fore_rgb: u32) {
+    const INDIC_SQUIGGLE: isize = 1;
+    send_message(hwnd, SCI_INDICSETSTYLE, indicator, INDIC_SQUIGGLE);
+    send_message(hwnd, SCI_INDICSETFORE, indicator, fore_rgb as isize);
+    send_message(hwnd, SCI_INDICSETUNDER, indicator, 1);
 }
 
 pub fn set_indicator_current(hwnd: HWND, indicator: usize) {

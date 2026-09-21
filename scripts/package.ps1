@@ -17,7 +17,9 @@ if (-not $versionMatch) {
 $version = $versionMatch.Matches[0].Groups[1].Value
 
 Write-Host "Building rivet $version ($Configuration)..."
-cargo build --$Configuration
+if ($Configuration -eq 'release') { cargo build --release --bin rivet --locked }
+else { cargo build --bin rivet --locked }
+if ($LASTEXITCODE -ne 0) { throw 'Rivet build failed.' }
 
 $binDir = Join-Path $repoRoot "target\$Configuration"
 $exePath = Join-Path $binDir "rivet.exe"
@@ -39,7 +41,10 @@ if (-not (Get-ChildItem -Path $noticesDir -Recurse -File | Select-Object -First 
 $stagingName = "rivet-$version-win64-portable"
 $stagingDir = Join-Path $distDir $stagingName
 if (Test-Path $stagingDir) {
-    Remove-Item -Recurse -Force $stagingDir
+    $resolvedStaging = (Resolve-Path -LiteralPath $stagingDir).Path
+    $resolvedDist = (Resolve-Path -LiteralPath $distDir).Path
+    if ((Split-Path -Parent $resolvedStaging) -ne $resolvedDist) { throw 'Invalid staging directory.' }
+    Remove-Item -LiteralPath $resolvedStaging -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
 

@@ -13,6 +13,7 @@ pub const MAX_VERTICAL_TAB_WIDTH_PX: i32 = 600;
 pub const DEFAULT_VERTICAL_TAB_WIDTH_PX: i32 = 180;
 pub const DEFAULT_EDITOR_DARK: bool = true;
 pub const DEFAULT_SMART_HIGHLIGHT_ENABLED: bool = true;
+pub const DEFAULT_SPELLCHECK_ENABLED: bool = true;
 pub const DEFAULT_SMART_HIGHLIGHT_MATCH_CASE: bool = false;
 pub const DEFAULT_SMART_HIGHLIGHT_WHOLE_WORD: bool = true;
 pub const DEFAULT_LARGE_FILE_THRESHOLD_MB: u32 = 20;
@@ -55,6 +56,12 @@ pub struct UiSettings {
     pub editor_dark: bool,
     #[serde(default = "default_smart_highlight_enabled")]
     pub smart_highlight_enabled: bool,
+    #[serde(default = "default_spellcheck_enabled")]
+    pub spellcheck_enabled: bool,
+    #[serde(default)]
+    pub automatic_updates: bool,
+    #[serde(default)]
+    pub last_update_check: u64,
     #[serde(default = "default_smart_highlight_match_case")]
     pub smart_highlight_match_case: bool,
     #[serde(default = "default_smart_highlight_whole_word")]
@@ -82,6 +89,9 @@ impl Default for UiSettings {
             vertical_tab_width_px: DEFAULT_VERTICAL_TAB_WIDTH_PX,
             editor_dark: DEFAULT_EDITOR_DARK,
             smart_highlight_enabled: DEFAULT_SMART_HIGHLIGHT_ENABLED,
+            spellcheck_enabled: DEFAULT_SPELLCHECK_ENABLED,
+            automatic_updates: false,
+            last_update_check: 0,
             smart_highlight_match_case: DEFAULT_SMART_HIGHLIGHT_MATCH_CASE,
             smart_highlight_whole_word: DEFAULT_SMART_HIGHLIGHT_WHOLE_WORD,
             large_file_threshold_mb: DEFAULT_LARGE_FILE_THRESHOLD_MB,
@@ -103,6 +113,12 @@ struct UiSettingsWire {
     editor_dark: bool,
     #[serde(default = "default_smart_highlight_enabled")]
     smart_highlight_enabled: bool,
+    #[serde(default = "default_spellcheck_enabled")]
+    spellcheck_enabled: bool,
+    #[serde(default)]
+    automatic_updates: bool,
+    #[serde(default)]
+    last_update_check: u64,
     #[serde(default = "default_smart_highlight_match_case")]
     smart_highlight_match_case: bool,
     #[serde(default = "default_smart_highlight_whole_word")]
@@ -130,6 +146,9 @@ impl From<UiSettingsWire> for UiSettings {
             vertical_tab_width_px: value.vertical_tab_width_px,
             editor_dark: value.editor_dark,
             smart_highlight_enabled: value.smart_highlight_enabled,
+            spellcheck_enabled: value.spellcheck_enabled,
+            automatic_updates: value.automatic_updates,
+            last_update_check: value.last_update_check,
             smart_highlight_match_case: value.smart_highlight_match_case,
             smart_highlight_whole_word: value.smart_highlight_whole_word,
             large_file_threshold_mb: value.large_file_threshold_mb,
@@ -218,6 +237,10 @@ fn default_smart_highlight_enabled() -> bool {
     DEFAULT_SMART_HIGHLIGHT_ENABLED
 }
 
+fn default_spellcheck_enabled() -> bool {
+    DEFAULT_SPELLCHECK_ENABLED
+}
+
 fn default_editor_dark() -> bool {
     DEFAULT_EDITOR_DARK
 }
@@ -235,6 +258,7 @@ fn default_large_file_threshold_mb() -> u32 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
@@ -344,6 +368,9 @@ mod tests {
             vertical_tab_width_px: 320,
             editor_dark: false,
             smart_highlight_enabled: false,
+            spellcheck_enabled: false,
+            automatic_updates: true,
+            last_update_check: 123456,
             smart_highlight_match_case: true,
             smart_highlight_whole_word: false,
             large_file_threshold_mb: 50,
@@ -358,6 +385,7 @@ mod tests {
         assert!(json.contains("\"vertical_tab_width_px\": 320"));
         assert!(json.contains("\"editor_dark\": false"));
         assert!(json.contains("\"smart_highlight_enabled\": false"));
+        assert!(json.contains("\"spellcheck_enabled\": false"));
         assert!(json.contains("\"large_file_threshold_mb\": 50"));
         assert!(json.contains("\"large_file_disable_word_wrap\": true"));
         assert!(json.contains("\"large_file_disable_smart_highlight\": true"));
@@ -407,6 +435,9 @@ mod tests {
             assert_eq!(loaded.tab_placement, TabPlacement::Left);
             assert_eq!(loaded.vertical_tab_width_px, MAX_VERTICAL_TAB_WIDTH_PX);
             assert_eq!(loaded.editor_dark, DEFAULT_EDITOR_DARK);
+            assert!(loaded.spellcheck_enabled);
+            assert!(!loaded.automatic_updates);
+            assert_eq!(loaded.last_update_check, 0);
             assert_eq!(loaded.large_file_threshold_mb, MIN_LARGE_FILE_THRESHOLD_MB);
         });
     }

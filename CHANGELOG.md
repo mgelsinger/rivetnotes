@@ -5,7 +5,30 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 ## [Unreleased]
 
-- TBD.
+### Added
+
+- Optional background updates, disabled by default, with status-bar progress
+  and a restart action. Per-user installations update silently after a safe
+  normal exit, without reopening the app unless requested.
+- System-wide installations can download updates automatically and install on
+  an explicit restart with Windows administrator approval. Normal close stays
+  quiet; cancelling approval keeps the update pending and reopens Rivet.
+- Signed release metadata, verified installer downloads, and release automation
+  that publishes the update feed only after all release files are uploaded.
+
+- Spelling underlines for notes, plain text, and Markdown prose using installed
+  Windows dictionaries. `View > Spellcheck` toggles the feature and remembers
+  the preference. Checks run in the background after typing pauses, without
+  changing document text or undo history.
+- Exclusions for URLs, email addresses, and Markdown code/link destinations;
+  spelling is disabled for source formats and large documents by default.
+
+### Fixed
+
+- Replace constant-size `chunks_exact` calls in UTF-16 decoding and single-instance
+  file handling with fixed-size array chunks to resolve current CI lint failures.
+- Restrict test-only `unwrap` allowances to test modules and check all targets
+  in CI, keeping production error-handling checks strict.
 
 ## [0.4.22] - 2026-07-05
 

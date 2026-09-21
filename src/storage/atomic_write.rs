@@ -166,6 +166,7 @@ fn path_to_wide(path: &Path) -> Vec<u16> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use tempfile::TempDir;

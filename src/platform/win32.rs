@@ -63,19 +63,19 @@ use windows::Win32::UI::WindowsAndMessaging::{
     LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL,
     MENUBARINFO, MENUITEMINFOW, MF_BYCOMMAND, MF_BYPOSITION, MF_CHECKED, MF_ENABLED, MF_GRAYED,
     MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MIIM_STRING, MSG, MessageBoxW, OBJID_MENU,
-    PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE,
-    SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, SW_SHOWNORMAL, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_METRICS_INDEX, SendMessageW,
-    SetClassLongPtrW, SetCursor, SetTimer, SetWindowLongPtrW, SetWindowPlacement, SetWindowPos,
-    SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS,
-    WM_ACTIVATEAPP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_COPYDATA,
-    WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORDLG, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX,
-    WM_CTLCOLORSTATIC, WM_DESTROY, WM_DROPFILES, WM_ERASEBKGND, WM_GETFONT, WM_GETICON,
-    WM_INITMENUPOPUP, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE,
-    WM_NCDESTROY, WM_NOTIFY, WM_PAINT, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW,
-    WPF_RESTORETOMAXIMIZED, WS_BORDER, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW,
-    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    PostMessageW, PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON,
+    SM_CYSMICON, SW_HIDE, SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, SW_SHOWNORMAL,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_METRICS_INDEX,
+    SendMessageW, SetClassLongPtrW, SetCursor, SetMenuItemInfoW, SetTimer, SetWindowLongPtrW,
+    SetWindowPlacement, SetWindowPos, SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE,
+    WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS, WM_ACTIVATEAPP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE,
+    WM_COMMAND, WM_CONTEXTMENU, WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORDLG,
+    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DROPFILES,
+    WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP, WM_KEYDOWN, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT, WM_SETCURSOR,
+    WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WPF_RESTORETOMAXIMIZED, WS_BORDER, WS_CAPTION,
+    WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::PWSTR;
 use windows::core::{HSTRING, PCWSTR, w};
@@ -83,6 +83,7 @@ use windows::core::{HSTRING, PCWSTR, w};
 use crate::app::document::{self, Document, Eol, TextEncoding};
 use crate::app::session;
 use crate::app::settings::{self, MAX_RECENT_FILES, TabPlacement, UiSettings};
+use crate::app::updates::Controller as UpdateController;
 use crate::commands::copy_full_path::{
     CopyPathKind, can_copy_directory_path, can_copy_filename, can_copy_full_path,
     copy_directory_path, copy_filename, copy_full_path,
@@ -90,11 +91,13 @@ use crate::commands::copy_full_path::{
 use crate::commands::selection::{can_lowercase, can_uppercase};
 use crate::editor::markdown;
 use crate::editor::scintilla;
+use crate::editor::spellcheck;
 use crate::error::{AppError, Result};
 use crate::logging;
 use crate::platform::clipboard::{Clipboard, WinClipboard};
 use crate::platform::dark_mode;
 use crate::platform::single_instance;
+use crate::platform::spellcheck::{Event as SpellingEvent, Worker as SpellingWorker};
 use crate::textops::trim::{trim_edges_spaces_tabs, trim_line_preserve_eol};
 use regex::RegexBuilder;
 
@@ -147,6 +150,7 @@ const CMD_EDITOR_EXPAND_ALL: u16 = 353;
 const IDM_VIEW_ZOOM_IN: u16 = 354;
 const IDM_VIEW_ZOOM_OUT: u16 = 355;
 const IDM_VIEW_ZOOM_RESET: u16 = 356;
+const IDM_VIEW_SPELLCHECK: u16 = 357;
 // Language (syntax) override commands. CMD_LANG_AUTO clears the per-tab override
 // and falls back to extension detection; the rest force a specific lexer.
 const CMD_LANG_AUTO: u16 = 360;
@@ -169,6 +173,9 @@ const CMD_TAB_DUPLICATE: u16 = 223;
 const CMD_TAB_CLOSE_LEFT: u16 = 224;
 const CMD_EDITOR_DELETE: u16 = 331;
 const IDM_HELP_ABOUT: u16 = 400;
+const IDM_HELP_AUTO_UPDATES: u16 = 401;
+const IDM_HELP_CHECK_UPDATES: u16 = 402;
+const IDM_HELP_RESTART_UPDATE: u16 = 403;
 // Recent-files menu: one command id per slot (700..710), plus a Clear item.
 const IDM_RECENT_FILE_BASE: u16 = 700;
 const IDM_RECENT_CLEAR: u16 = 710;
@@ -180,6 +187,9 @@ const TIMER_FIND_RESULTS: usize = 2;
 const TIMER_WORD_COUNT: usize = 3;
 const WORD_COUNT_INTERVAL_MS: u32 = 250;
 const TIMER_MARKDOWN_FOLD: usize = 4;
+const TIMER_SPELLCHECK: usize = 5;
+const TIMER_UPDATES: usize = 6;
+const SPELLING_INDIC: usize = 10;
 const MARKDOWN_FOLD_INTERVAL_MS: u32 = 300;
 const TAB_SPLITTER_WIDTH: i32 = 4;
 const SMART_HL_INDIC: usize = 8;
@@ -271,6 +281,7 @@ unsafe extern "system" {
 }
 
 struct DocTab {
+    spelling: spellcheck::Scan,
     runtime_id: isize,
     editor: HWND,
     doc: Document,
@@ -414,6 +425,11 @@ impl TabStripHost {
 }
 
 struct AppState {
+    updates: UpdateController,
+    close_checkpoint_saved: bool,
+    spelling_worker: Option<SpellingWorker>,
+    spelling_error: Option<String>,
+    spelling_notify_error: bool,
     tab_host: TabStripHost,
     ui_settings: UiSettings,
     status: HWND,
@@ -862,6 +878,12 @@ fn create_menu() -> Result<HMENU> {
             w!("Right"),
         )?;
         AppendMenuW(view_menu, MF_POPUP, tabs_menu.0 as usize, w!("Tabs"))?;
+        AppendMenuW(
+            view_menu,
+            MF_STRING,
+            IDM_VIEW_SPELLCHECK as usize,
+            w!("Spellcheck"),
+        )?;
         AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(
             view_menu,
@@ -965,6 +987,25 @@ fn create_menu() -> Result<HMENU> {
         AppendMenuW(menu, MF_POPUP, view_menu.0 as usize, w!("View"))?;
 
         let help_menu = CreatePopupMenu()?;
+        AppendMenuW(
+            help_menu,
+            MF_STRING,
+            IDM_HELP_AUTO_UPDATES as usize,
+            w!("Automatically update on exit"),
+        )?;
+        AppendMenuW(
+            help_menu,
+            MF_STRING,
+            IDM_HELP_CHECK_UPDATES as usize,
+            w!("Check for updates"),
+        )?;
+        AppendMenuW(
+            help_menu,
+            MF_STRING,
+            IDM_HELP_RESTART_UPDATE as usize,
+            w!("Restart to update"),
+        )?;
+        AppendMenuW(help_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(
             help_menu,
             MF_STRING,
@@ -1770,6 +1811,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
+                IDM_VIEW_SPELLCHECK => {
+                    if let Some(state) = get_state(hwnd) {
+                        toggle_spellcheck(hwnd, state);
+                    }
+                    LRESULT(0)
+                }
                 IDM_VIEW_ZOOM_IN => {
                     if let Some(state) = get_state(hwnd) {
                         adjust_zoom(state, 1);
@@ -1921,14 +1968,52 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     LRESULT(0)
                 }
                 IDM_FILE_EXIT => {
+                    request_app_close(hwnd, false);
+                    LRESULT(0)
+                }
+                IDM_HELP_AUTO_UPDATES => {
                     if let Some(state) = get_state(hwnd) {
-                        match can_exit(hwnd, state) {
-                            Ok(true) => {
-                                let _ = unsafe { DestroyWindow(hwnd) };
+                        let enabled =
+                            !state.ui_settings.automatic_updates && state.updates.supported();
+                        let mut next = state.ui_settings.clone();
+                        next.automatic_updates = enabled;
+                        match settings::save_settings(&next) {
+                            Ok(()) => {
+                                state.ui_settings = next;
+                                state.updates.set_enabled(enabled);
                             }
-                            Ok(false) => {}
-                            Err(err) => show_error("Rivet error", &err.to_string()),
+                            Err(error) => {
+                                logging::log_error(&format!("update_setting_failed: {error}"));
+                                if !enabled {
+                                    // Honour opting out immediately even if persistence fails.
+                                    state.ui_settings.automatic_updates = false;
+                                    state.updates.set_enabled(false);
+                                    state
+                                        .updates
+                                        .report("Updates paused - preference could not be saved");
+                                } else {
+                                    state.updates.report("Could not save update preference");
+                                }
+                            }
                         }
+                        update_updates_menu(hwnd, state);
+                        update_status(state);
+                    }
+                    LRESULT(0)
+                }
+                IDM_HELP_CHECK_UPDATES => {
+                    if let Some(state) = get_state(hwnd) {
+                        if let Some(timestamp) = state.updates.check_now() {
+                            remember_update_check(state, timestamp);
+                        }
+                        update_updates_menu(hwnd, state);
+                        update_status(state);
+                    }
+                    LRESULT(0)
+                }
+                IDM_HELP_RESTART_UPDATE => {
+                    if get_state(hwnd).is_some_and(|state| state.updates.ready()) {
+                        request_app_close(hwnd, true);
                     }
                     LRESULT(0)
                 }
@@ -2084,11 +2169,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 }
 
                 if nmhdr.code == SCN_MODIFIED {
+                    let notification = unsafe { &*(lparam.0 as *const scintilla::SciNotification) };
+                    // Decorations and lexer/fold changes must not count as text edits.
+                    if notification.modification_type & 3 == 0 {
+                        return LRESULT(0);
+                    }
                     if let Some(state) = get_state(hwnd) {
                         if let Some(index) = doc_index_by_hwnd(state, nmhdr.hwndFrom)
                             && let Some(doc_tab) = state.docs.get_mut(index)
                         {
                             doc_tab.change_counter = doc_tab.change_counter.saturating_add(1);
+                            invalidate_spelling(doc_tab, notification.position.max(0) as usize);
                             doc_tab.doc.cursor_pos =
                                 scintilla::get_current_pos(doc_tab.editor) as i64;
                         }
@@ -2129,6 +2220,21 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 && let Some(state) = get_state(hwnd)
             {
                 handle_markdown_fold_timer(hwnd, state);
+            } else if wparam.0 == TIMER_SPELLCHECK
+                && let Some(state) = get_state(hwnd)
+            {
+                handle_spellcheck_timer(state);
+            } else if wparam.0 == TIMER_UPDATES
+                && let Some(state) = get_state(hwnd)
+            {
+                let previous = state.updates.status().to_owned();
+                if let Some(timestamp) = state.updates.tick(state.ui_settings.last_update_check) {
+                    remember_update_check(state, timestamp);
+                }
+                if previous != state.updates.status() {
+                    update_updates_menu(hwnd, state);
+                    update_status(state);
+                }
             }
             LRESULT(0)
         }
@@ -2154,7 +2260,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
             }
             let units: Vec<u16> = bytes
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
                 .collect();
             let paths = single_instance::decode_paths(&units);
@@ -2187,19 +2295,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_CLOSE => {
-            if let Some(state) = get_state(hwnd) {
-                match can_exit(hwnd, state) {
-                    Ok(true) => {
-                        let _ = unsafe { DestroyWindow(hwnd) };
-                    }
-                    Ok(false) => {}
-                    Err(err) => show_error("Rivet error", &err.to_string()),
-                }
-            }
+            request_app_close(hwnd, false);
             LRESULT(0)
         }
         WM_DESTROY => {
             if let Some(state) = get_state(hwnd)
+                && !state.close_checkpoint_saved
                 && let Err(err) = save_session_checkpoint(hwnd, state)
             {
                 logging::log_error(&format!("session_save_on_destroy_failed err={err}"));
@@ -2209,6 +2310,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let _ = KillTimer(hwnd, TIMER_FIND_RESULTS);
                 let _ = KillTimer(hwnd, TIMER_WORD_COUNT);
                 let _ = KillTimer(hwnd, TIMER_MARKDOWN_FOLD);
+                let _ = KillTimer(hwnd, TIMER_SPELLCHECK);
+                let _ = KillTimer(hwnd, TIMER_UPDATES);
             }
             unsafe {
                 PostQuitMessage(0);
@@ -2397,6 +2500,11 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     // Captured before the struct literal moves `ui_settings` into the state.
     let editor_dark = ui_settings.editor_dark;
     let state = AppState {
+        updates: UpdateController::new(ui_settings.automatic_updates),
+        close_checkpoint_saved: false,
+        spelling_worker: None,
+        spelling_error: None,
+        spelling_notify_error: false,
         tab_host: TabStripHost {
             top_tabs,
             vertical_tabs,
@@ -2476,8 +2584,12 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     update_editor_dark_menu(hwnd, state.editor_dark);
     update_always_on_top_menu(hwnd, &state);
     rebuild_recent_files_menu(hwnd, &state);
+    update_spellcheck_menu(hwnd, &state);
+    update_updates_menu(hwnd, &state);
 
     unsafe {
+        let _ = SetTimer(hwnd, TIMER_SPELLCHECK, 75, None);
+        let _ = SetTimer(hwnd, TIMER_UPDATES, 500, None);
         let _ = SetTimer(
             hwnd,
             TIMER_SESSION_ID,
@@ -3019,6 +3131,7 @@ fn update_status(state: &AppState) {
     set_status_part_text(state.status, 3, &format!("EOL: {eol}"));
     set_status_part_text(state.status, 4, &format!("ENC: {encoding}"));
     set_status_part_text(state.status, 5, &flags);
+    set_status_part_text(state.status, 6, state.updates.status());
 }
 
 fn update_status_parts(state: &AppState) {
@@ -3027,6 +3140,12 @@ fn update_status_parts(state: &AppState) {
         let _ = GetClientRect(state.status, &mut rect);
     }
     let width = rect.right - rect.left;
+    let update_width = if state.updates.status().is_empty() {
+        0
+    } else {
+        scale_for_dpi(state.status, 290).min(width.max(0))
+    };
+    let width = width - update_width;
     let sel_width = scale_for_dpi(state.status, 90);
     let words_width = scale_for_dpi(state.status, 120);
     let eol_width = scale_for_dpi(state.status, 90);
@@ -3037,7 +3156,7 @@ fn update_status_parts(state: &AppState) {
     let part2 = (width - eol_width - enc_width - dirty_width).max(part1);
     let part3 = (width - enc_width - dirty_width).max(part2);
     let part4 = (width - dirty_width).max(part3);
-    let parts = [part0, part1, part2, part3, part4, -1];
+    let parts = [part0, part1, part2, part3, part4, width, -1];
     unsafe {
         SendMessageW(
             state.status,
@@ -4318,6 +4437,215 @@ fn recompute_markdown_fold_levels(state: &AppState, index: usize) {
     apply_markdown_fold_levels(doc_tab.editor);
 }
 
+fn clear_spelling(editor: HWND, start: usize) {
+    scintilla::set_indicator_current(editor, SPELLING_INDIC);
+    scintilla::clear_indicator_range(
+        editor,
+        start,
+        scintilla::get_length(editor).saturating_sub(start),
+    );
+}
+
+fn invalidate_spelling(doc: &mut DocTab, position: usize) {
+    let start = doc.spelling.invalidate(position);
+    if doc.spelling.mode.is_some() {
+        clear_spelling(doc.editor, start);
+    }
+}
+
+fn spelling_mode(doc: &DocTab, enabled: bool) -> Option<bool> {
+    if !enabled
+        || doc.doc.large_file_mode
+        || scintilla::get_length(doc.editor) > spellcheck::MAX_DOCUMENT_BYTES
+    {
+        return None;
+    }
+    match effective_lexer(doc) {
+        scintilla::LexerKind::Markdown => Some(true),
+        scintilla::LexerKind::Null => {
+            let extension = doc
+                .doc
+                .path
+                .as_ref()
+                .and_then(|p| p.extension())
+                .and_then(|ext| ext.to_str())
+                .map(str::to_ascii_lowercase);
+            // Unknown source formats (for example Rust) also use the Null
+            // lexer, so only opt actual text files into automatic checking.
+            (doc.lexer_override == Some(scintilla::LexerKind::Null)
+                || matches!(extension.as_deref(), None | Some("txt" | "text" | "log")))
+            .then_some(false)
+        }
+        _ => None,
+    }
+}
+
+fn update_spellcheck_menu(hwnd: HWND, state: &AppState) {
+    let menu = unsafe { GetMenu(hwnd) };
+    if menu.0 != 0 {
+        set_menu_check(
+            menu,
+            IDM_VIEW_SPELLCHECK,
+            state.ui_settings.spellcheck_enabled,
+        );
+    }
+}
+
+fn toggle_spellcheck(hwnd: HWND, state: &mut AppState) {
+    state.ui_settings.spellcheck_enabled = !state.ui_settings.spellcheck_enabled;
+    state.spelling_worker = None;
+    state.spelling_error = None;
+    state.spelling_notify_error = state.ui_settings.spellcheck_enabled;
+    for doc in &mut state.docs {
+        doc.spelling.set_mode(None);
+        clear_spelling(doc.editor, 0);
+    }
+    update_spellcheck_menu(hwnd, state);
+    if let Err(err) = settings::save_settings(&state.ui_settings) {
+        show_error("Rivet settings", &err.to_string());
+    }
+}
+
+fn handle_spellcheck_timer(state: &mut AppState) {
+    if !state.ui_settings.spellcheck_enabled {
+        return;
+    }
+    if state.spelling_worker.is_none() && state.spelling_error.is_none() {
+        state.spelling_worker = Some(SpellingWorker::start());
+    }
+    while let Some(event) = state
+        .spelling_worker
+        .as_ref()
+        .and_then(|worker| worker.results.try_recv().ok())
+    {
+        match event {
+            SpellingEvent::Ready(language) => {
+                if let Some(worker) = &mut state.spelling_worker {
+                    worker.ready = true;
+                }
+                state.spelling_notify_error = false;
+                logging::log_info(&format!("spellcheck_ready language={language}"));
+            }
+            SpellingEvent::Unavailable(error) => {
+                logging::log_error(&format!("spellcheck_unavailable err={error}"));
+                if state.spelling_notify_error {
+                    show_error("Spellcheck unavailable", &error);
+                }
+                state.spelling_notify_error = false;
+                state.spelling_error = Some(error);
+                state.spelling_worker = None;
+                for doc in &mut state.docs {
+                    doc.spelling.set_mode(None);
+                    clear_spelling(doc.editor, 0);
+                }
+            }
+            SpellingEvent::Checked(result) => {
+                if let Some(worker) = &mut state.spelling_worker {
+                    worker.busy = false;
+                }
+                if let Some(doc) = state
+                    .docs
+                    .iter_mut()
+                    .find(|doc| doc.runtime_id == result.key.tab)
+                    && doc
+                        .spelling
+                        .accepts(&result, doc.runtime_id, doc.change_counter)
+                    && spelling_mode(doc, true) == doc.spelling.mode
+                {
+                    scintilla::set_indicator_current(doc.editor, SPELLING_INDIC);
+                    scintilla::set_indicator_value(doc.editor, 1);
+                    scintilla::clear_indicator_range(
+                        doc.editor,
+                        result.key.start,
+                        result.next - result.key.start,
+                    );
+                    for range in &result.ranges {
+                        scintilla::fill_indicator_range(
+                            doc.editor,
+                            range.start,
+                            range.end - range.start,
+                        );
+                    }
+                    doc.spelling.advance(&result);
+                }
+            }
+        }
+    }
+    let Some(doc) = state.docs.get_mut(state.active) else {
+        return;
+    };
+    let mode = spelling_mode(doc, state.spelling_error.is_none());
+    if doc.spelling.set_mode(mode) {
+        clear_spelling(doc.editor, 0);
+    }
+    let Some(markdown) = mode else {
+        return;
+    };
+    if doc.spelling.edited_at.elapsed() < spellcheck::EDIT_DELAY {
+        return;
+    }
+    let Some(worker) = &mut state.spelling_worker else {
+        return;
+    };
+    if worker.busy || !worker.ready {
+        return;
+    }
+    let length = scintilla::get_length(doc.editor);
+    let start = doc.spelling.next;
+    if start >= length {
+        return;
+    }
+    let mut end = (start + spellcheck::CHUNK_BYTES).min(length);
+    if end < length {
+        let line_start = scintilla::position_from_line(
+            doc.editor,
+            scintilla::line_from_position(doc.editor, end),
+        );
+        if line_start > start {
+            end = line_start;
+        } else {
+            // The chunk limit cuts a long physical line. Keep valid UTF-8;
+            // the worker skips that line and carries its Markdown context.
+            while end > start && scintilla::char_at(doc.editor, end) & 0xc0 == 0x80 {
+                end -= 1;
+            }
+        }
+    }
+    match scintilla::get_text_range(doc.editor, start, end) {
+        Ok(mut text) => {
+            if !markdown
+                && end < length
+                && let Some((boundary, whitespace)) =
+                    text.char_indices().rev().find(|(_, ch)| ch.is_whitespace())
+            {
+                // Preserve whole words across chunks in long wrapped notes.
+                text.truncate(boundary + whitespace.len_utf8());
+                end = start + text.len();
+            }
+            worker.submit(spellcheck::Job {
+                key: spellcheck::JobKey {
+                    tab: doc.runtime_id,
+                    revision: doc.change_counter,
+                    generation: doc.spelling.generation,
+                    start,
+                },
+                text,
+                markdown,
+                context: doc.spelling.context,
+                end_of_document: end == length,
+            });
+        }
+        Err(err) => {
+            logging::log_error(&format!("spellcheck_snapshot_failed err={err}"));
+            state.spelling_error = Some(err.to_string());
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "spellcheck_tests.rs"]
+mod spellcheck_tests;
+
 /// Debounce a markdown fold recompute. Recomputing on every keystroke walks
 /// the whole document, so we coalesce edits behind a short timer and only act
 /// on the active doc once typing settles.
@@ -4394,6 +4722,12 @@ fn apply_editor_theme_overlays(editor: HWND, dark: bool) {
         color_ref(155, 92, 92).0
     };
     scintilla::configure_strike_indicator(editor, STRIKE_INDIC, strike_color);
+    let spelling_color = if dark {
+        color_ref(245, 115, 115)
+    } else {
+        color_ref(195, 35, 35)
+    };
+    scintilla::configure_spelling_indicator(editor, SPELLING_INDIC, spelling_color.0);
 
     let hidden_line_color = if dark {
         color_ref(114, 160, 230).0
@@ -4469,6 +4803,7 @@ fn create_doc_from_path(
     let mut doc = Document::new_empty();
     doc.backup_path = session::backup_path_for_id(doc.id)?;
     let mut doc_tab = DocTab {
+        spelling: spellcheck::Scan::default(),
         runtime_id: 0,
         editor,
         doc,
@@ -4544,6 +4879,7 @@ fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Re
     doc.display_name = next_untitled_name(state);
     doc.backup_path = session::backup_path_for_id(doc.id)?;
     let doc_tab = DocTab {
+        spelling: spellcheck::Scan::default(),
         runtime_id: 0,
         editor,
         doc,
@@ -4600,6 +4936,7 @@ fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
     doc.is_dirty = true;
 
     let doc_tab = DocTab {
+        spelling: spellcheck::Scan::default(),
         runtime_id: 0,
         editor,
         doc,
@@ -5150,6 +5487,33 @@ unsafe extern "system" fn status_bar_subclass_proc(
     _ref_data: usize,
 ) -> LRESULT {
     match msg {
+        WM_LBUTTONUP => {
+            let parent = unsafe { GetParent(hwnd) };
+            if get_state(parent).is_some_and(|state| state.updates.ready()) {
+                let mut rect = RECT::default();
+                unsafe {
+                    SendMessageW(
+                        hwnd,
+                        SB_GETRECT,
+                        WPARAM(6),
+                        LPARAM(&mut rect as *mut RECT as isize),
+                    );
+                }
+                let x = lparam.0 as u16 as i16 as i32;
+                let y = (lparam.0 >> 16) as u16 as i16 as i32;
+                if x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom {
+                    let _ = unsafe {
+                        PostMessageW(
+                            parent,
+                            WM_COMMAND,
+                            WPARAM(IDM_HELP_RESTART_UPDATE as usize),
+                            LPARAM(0),
+                        )
+                    };
+                    return LRESULT(0);
+                }
+            }
+        }
         WM_ERASEBKGND => {
             return LRESULT(1);
         }
@@ -5633,6 +5997,7 @@ fn restore_session_entry(
     scintilla::set_savepoint(editor);
 
     let doc_tab = DocTab {
+        spelling: spellcheck::Scan::default(),
         runtime_id: 0,
         editor,
         doc,
@@ -5788,6 +6153,113 @@ fn can_exit(hwnd: HWND, state: &mut AppState) -> Result<bool> {
         return Ok(true);
     }
     confirm_close_all(hwnd, state)
+}
+
+fn remember_update_check(state: &mut AppState, timestamp: u64) {
+    state.ui_settings.last_update_check = timestamp;
+    if let Err(error) = settings::save_settings(&state.ui_settings) {
+        logging::log_error(&format!("update_timestamp_save_failed: {error}"));
+    }
+}
+
+fn update_updates_menu(hwnd: HWND, state: &AppState) {
+    let menu = unsafe { GetMenu(hwnd) };
+    if menu.0 == 0 {
+        return;
+    }
+    let labels = if state.updates.requires_approval() {
+        [
+            (IDM_HELP_AUTO_UPDATES, "Automatically download updates"),
+            (
+                IDM_HELP_RESTART_UPDATE,
+                "Restart to update (administrator approval)",
+            ),
+        ]
+    } else {
+        [
+            (IDM_HELP_AUTO_UPDATES, "Automatically update on exit"),
+            (IDM_HELP_RESTART_UPDATE, "Restart to update"),
+        ]
+    };
+    for (id, label) in labels {
+        let mut text: Vec<u16> = label.encode_utf16().chain(Some(0)).collect();
+        let info = MENUITEMINFOW {
+            cbSize: std::mem::size_of::<MENUITEMINFOW>() as u32,
+            fMask: MIIM_STRING,
+            dwTypeData: PWSTR(text.as_mut_ptr()),
+            ..Default::default()
+        };
+        let _ = unsafe { SetMenuItemInfoW(menu, id as u32, false, &info) };
+    }
+    set_menu_check(
+        menu,
+        IDM_HELP_AUTO_UPDATES,
+        state.ui_settings.automatic_updates && state.updates.supported(),
+    );
+    unsafe {
+        EnableMenuItem(
+            menu,
+            IDM_HELP_AUTO_UPDATES as u32,
+            MF_BYCOMMAND
+                | if state.updates.supported() {
+                    MF_ENABLED
+                } else {
+                    MF_GRAYED
+                },
+        );
+        EnableMenuItem(
+            menu,
+            IDM_HELP_RESTART_UPDATE as u32,
+            MF_BYCOMMAND
+                | if state.updates.ready() {
+                    MF_ENABLED
+                } else {
+                    MF_GRAYED
+                },
+        );
+    }
+}
+
+fn request_app_close(hwnd: HWND, restart: bool) {
+    let Some(state) = get_state(hwnd) else {
+        return;
+    };
+    match can_exit(hwnd, state) {
+        Ok(false) => return,
+        Err(error) => {
+            if restart || state.updates.install_on_exit() {
+                logging::log_error(&format!("update_shutdown_save_failed: {error}"));
+                state
+                    .updates
+                    .report("Update postponed - could not save notes");
+                update_status(state);
+            } else {
+                show_error("Rivet error", &error.to_string());
+            }
+            return;
+        }
+        Ok(true) => {}
+    }
+    if restart || state.updates.install_on_exit() {
+        if let Err(error) = save_session_checkpoint(hwnd, state) {
+            logging::log_error(&format!("update_checkpoint_failed: {error}"));
+            state
+                .updates
+                .report("Update postponed - could not save session");
+            update_status(state);
+            return;
+        }
+        if let Err(error) = state.updates.handoff(restart) {
+            logging::log_error(&format!("update_handoff_failed: {error}"));
+            if restart {
+                state.updates.report("Could not start update - try later");
+                update_status(state);
+                return;
+            }
+        }
+        state.close_checkpoint_saved = true;
+    }
+    let _ = unsafe { DestroyWindow(hwnd) };
 }
 
 fn backup_interval_ms(interval_secs: u32) -> u32 {
@@ -8136,6 +8608,7 @@ unsafe extern "system" fn find_in_files_wndproc(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

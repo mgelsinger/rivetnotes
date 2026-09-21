@@ -15,8 +15,12 @@ if (-not $versionMatch) {
 $version = $versionMatch.Matches[0].Groups[1].Value
 
 if ([string]::IsNullOrWhiteSpace($IsccPath)) {
-    $default = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
-    if (Test-Path $default) {
+    $default = @(
+        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+        (Join-Path $env:ProgramFiles 'Inno Setup 7\ISCC.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 7\ISCC.exe')
+    ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($default) {
         $IsccPath = $default
     } else {
         $cmd = Get-Command iscc.exe -ErrorAction SilentlyContinue
@@ -29,10 +33,9 @@ if ([string]::IsNullOrWhiteSpace($IsccPath)) {
 }
 
 $exePath = Join-Path $repoRoot "target\release\rivet.exe"
-if (-not (Test-Path $exePath)) {
-    Write-Host "Building rivet $version (release)..."
-    cargo build --release
-}
+Write-Host "Building rivet $version (release)..."
+cargo build --release --bin rivet --locked
+if ($LASTEXITCODE -ne 0) { throw 'Rivet build failed.' }
 
 $issPath = Join-Path $repoRoot "installer\rivet.iss"
 $noticesDir = Join-Path $repoRoot "THIRD_PARTY_NOTICES"
@@ -41,3 +44,4 @@ if (-not (Test-Path $noticesDir)) {
 }
 
 & $IsccPath "/DMyAppVersion=$version" "/DMyAppExe=$exePath" $issPath
+if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }

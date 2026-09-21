@@ -1,5 +1,12 @@
-#define MyAppName "Rivet"
-#define MyAppId "{{66885411-0CEF-459E-AA39-4B257B1A4D84}}"
+#ifndef MyAppName
+  #define MyAppName "Rivet"
+#endif
+#ifndef MyAppId
+  #define MyAppId "{{66885411-0CEF-459E-AA39-4B257B1A4D84}}"
+#endif
+#ifndef MyAppMutex
+  #define MyAppMutex "RivetNotes_SingleInstance_66885411-0CEF-459E-AA39-4B257B1A4D84"
+#endif
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.1.0"
@@ -13,8 +20,8 @@
 AppId={#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-DefaultDirName={autopf}\Rivet
-DefaultGroupName=Rivet
+DefaultDirName={autopf}\{#MyAppName}
+DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -28,6 +35,12 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ChangesAssociations=yes
+; Never replace an editor that was reopened while an update was being prepared.
+AppMutex={#MyAppMutex}
+; Serialize installation across Windows sessions, including shared installs.
+SetupMutex=Global\{#MyAppMutex}_Setup
+CloseApplications=no
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -45,6 +58,7 @@ Source: "..\\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\\THIRD_PARTY_NOTICES\\*"; DestDir: "{app}\\THIRD_PARTY_NOTICES"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Registry]
+#ifndef UpdaterSmokeTest
 ; ProgID used by "Open with" and Settings > Default apps file associations.
 Root: HKA; Subkey: "Software\Classes\Rivet.Document"; ValueType: string; ValueName: ""; ValueData: "Rivet Document"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Rivet.Document\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\rivet.exe"",0"
@@ -119,10 +133,13 @@ Root: HKA; Subkey: "Software\Rivet\Capabilities\FileAssociations"; ValueType: st
 Root: HKA; Subkey: "Software\Rivet\Capabilities\FileAssociations"; ValueType: string; ValueName: ".bat"; ValueData: "Rivet.Document"
 Root: HKA; Subkey: "Software\Rivet\Capabilities\FileAssociations"; ValueType: string; ValueName: ".cmd"; ValueData: "Rivet.Document"
 Root: HKA; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "Rivet"; ValueData: "Software\Rivet\Capabilities"; Flags: uninsdeletevalue
+#endif
 
 [Icons]
+#ifndef UpdaterSmokeTest
 Name: "{autoprograms}\Rivet"; Filename: "{app}\rivet.exe"
 Name: "{autodesktop}\Rivet"; Filename: "{app}\rivet.exe"; Tasks: desktopicon
+#endif
 
 [Run]
 Filename: "{app}\rivet.exe"; Description: "Launch Rivet"; Flags: nowait postinstall skipifsilent

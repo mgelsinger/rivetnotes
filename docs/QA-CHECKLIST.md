@@ -102,6 +102,52 @@ signing.
 - [ ] Clicking an entry whose file was deleted prunes it and shows a notice.
 - [ ] `Clear Recent Files` empties the list; the list survives a restart.
 
+## Spellcheck
+
+- [ ] `View > Spellcheck` is enabled for a fresh configuration and remembers
+  being turned off; toggling off clears underlines in every tab immediately.
+- [ ] A misspelled word is underlined after typing pauses; correction and
+  undo/redo update the underline without affecting other text decorations.
+- [ ] Accented and supplementary Unicode characters before a misspelling do
+  not shift its underline. CRLF, UTF-16, and ANSI files behave consistently.
+- [ ] Markdown inline/fenced code, indented code, link destinations, URLs, and
+  email addresses are excluded; prose and link labels are checked.
+- [ ] Switching or closing tabs while checking never paints another document's
+  results. Reload and Save As refresh spelling eligibility.
+- [ ] Large File Mode, documents above 2 MiB, and source formats skip spelling.
+  Long wrapped plain-text paragraphs still check words across chunk boundaries.
+- [ ] Light/dark mode, zoom, and session restore preserve correct behavior.
+- [ ] Missing dictionaries do not block editing; explicitly enabling spellcheck
+  explains how to install a supported dictionary.
+
+## Quiet Updates
+
+- [ ] Fresh and upgraded settings keep automatic updates off until enabled.
+- [ ] Help-menu checks and download progress stay in the existing status bar.
+- [ ] A verified update shows the ready message and enables Restart to update.
+- [ ] Normal close installs silently and does not relaunch. Explicit restart
+  reopens Rivet with the user's existing session preferences.
+- [ ] Cancelled saves, failed backups, and failed session checkpoints postpone
+  installation and preserve the edited buffers.
+- [ ] Turning automatic updates off cancels downloads and pending installation.
+- [ ] Offline checks fail quietly in automatic mode and report inline in manual
+  mode. Interrupted or altered downloads cannot become executable updates.
+- [ ] Cached updates are verified again after restart. Equal/older versions and
+  prereleases are ignored; invalid signatures/hashes are rejected.
+- [ ] Portable and script-installed copies do not auto-install.
+- [ ] Shared installs offer automatic downloads and explicitly label the restart
+  action as requiring administrator approval. Normal close never prompts.
+- [ ] Accepting UAC updates the existing shared directory and HKLM registration;
+  it does not create a per-user installation. Rivet reopens under the original
+  account, including when another administrator supplies credentials.
+- [ ] Cancelling UAC reopens Rivet, reports postponement inline, and retains the
+  verified update. Other users' running editors are never forcibly closed.
+- [ ] An installer failure is reported inline on next launch, without a new
+  updater window or a forced Windows restart.
+- [ ] `scripts/test-updater-installer.ps1` passes for the release compiler.
+- [ ] In an already elevated test session, the same script with `-Scope Machine`
+  passes and keeps the installation in HKLM through both versions.
+
 ## Tip
 
 If you find a new bug class that this checklist would miss, add a line.

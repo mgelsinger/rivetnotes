@@ -22,7 +22,7 @@ jobs:
         run: cargo fmt --check
 
   clippy:
-    name: cargo clippy -- -D warnings
+    name: cargo clippy --all-targets -- -D warnings
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
           toolchain: stable
           components: clippy
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
   test:
     name: cargo test

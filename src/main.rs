@@ -15,6 +15,9 @@ mod storage;
 mod textops;
 
 fn main() {
+    if app::updates::run_helper_if_requested() {
+        return;
+    }
     let verbose = logging::verbose_from_env();
     let _ = logging::init(verbose);
     if let Err(err) = platform::win32::run() {

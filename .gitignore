@@ -22,3 +22,4 @@
 *.obj
 *.lib
 *.exp
+update-signing.key

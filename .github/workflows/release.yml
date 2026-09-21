@@ -14,6 +14,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: rivet-release
+  cancel-in-progress: false
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -22,6 +26,16 @@ jobs:
       pull-requests: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      - name: Validate release version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          $match = Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+          $version = $match.Matches[0].Groups[1].Value
+          if ($env:RELEASE_TAG -cne "v$version" -or $version -notmatch '^\d+\.\d+\.\d+$') { throw 'Tag must match the stable Cargo version.' }
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -31,19 +45,28 @@ jobs:
       - name: Format
         run: cargo fmt --check
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test
       - name: Build portable
         run: pwsh -ExecutionPolicy Bypass -File scripts\package.ps1
       - name: Build installer
-        env:
-          INNO_SETUP_ISCC: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
         run: pwsh -ExecutionPolicy Bypass -File scripts\build-installer.ps1
+      - name: Test silent installer
+        run: pwsh -File scripts/test-updater-installer.ps1
+      - name: Test system-wide installer
+        run: pwsh -File scripts/test-updater-installer.ps1 -Scope Machine
+      - name: Sign update metadata
+        env:
+          RIVET_UPDATE_SIGNING_KEY: ${{ secrets.RIVET_UPDATE_SIGNING_KEY }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: pwsh -File scripts/prepare-update.ps1 -Tag $env:RELEASE_TAG
       - name: Prepare release notes
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
-          $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
+          $tag = $env:RELEASE_TAG
           $version = $tag.TrimStart("v")
           $lines = Get-Content CHANGELOG.md
           $start = ($lines | Select-String -SimpleMatch "## [$version]" -List).LineNumber
@@ -57,12 +80,7 @@ jobs:
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           $section | Set-Content -Path dist\\release-notes.md -Encoding utf8
       - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-          generate_release_notes: false
-          body_path: dist/release-notes.md
-          files: |
-            dist/*.zip
-            dist/*.exe
-            dist/checksums.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: pwsh -File scripts/publish-release.ps1 -Tag $env:RELEASE_TAG
