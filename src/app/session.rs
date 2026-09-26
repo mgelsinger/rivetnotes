@@ -417,6 +417,23 @@ fn default_always_on_top() -> bool {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn portable_profiles_require_an_explicit_file_marker() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("rivet.exe");
+        std::fs::create_dir(directory.path().join("data")).unwrap();
+        assert_eq!(portable_data_dir(&executable).unwrap(), None);
+        let marker = directory.path().join(PORTABLE_MARKER_NAME);
+        std::fs::write(&marker, b"").unwrap();
+        assert_eq!(
+            portable_data_dir(&executable).unwrap(),
+            Some(directory.path().join("data"))
+        );
+        std::fs::remove_file(&marker).unwrap();
+        std::fs::create_dir(&marker).unwrap();
+        assert!(portable_data_dir(&executable).is_err());
+    }
     use tempfile::TempDir;
 
     fn with_temp_local_appdata<F>(action: F)

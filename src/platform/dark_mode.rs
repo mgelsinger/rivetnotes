@@ -162,7 +162,7 @@ pub fn restore_visual_styles(hwnd: HWND) {
 /// Sets a checkbox/radio-style `BS_AUTOCHECKBOX` control's visual style for
 /// the given dark-mode state: disabled (classic rendering, so
 /// `WM_CTLCOLORBTN`'s text color actually takes effect) when dark, restored
-/// (normal themed rendering) when light. Idempotent — safe to call on every
+/// (normal themed rendering) when light. Idempotent - safe to call on every
 /// theme change, not just once at creation.
 pub fn set_checkbox_dark_mode(hwnd: HWND, dark: bool) {
     if dark {

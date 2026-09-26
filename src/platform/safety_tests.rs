@@ -5,7 +5,7 @@ use super::spellcheck_tests::{TestData, TestWindow, register_test_editor};
 use super::*;
 use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 
-fn window() -> Result<TestWindow> {
+pub(super) fn window() -> Result<TestWindow> {
     let instance = module_instance()?;
     register_test_editor(instance)?;
     unsafe {

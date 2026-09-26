@@ -5,6 +5,37 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 ## [Unreleased]
 
+## [0.4.26] - 2026-09-25
+
+### Added
+
+- Font selection through `View > Font...`, with persistent family and size.
+- A persistent `View > Line Numbers` toggle.
+- `Edit > Insert Date/Time` and F5, inserting local `YYYY-MM-DD HH:MM` text.
+- Save-dialog filename prefill and language-aware default extensions. Auto mode
+  preserves existing extensions, including alternate and unknown extensions.
+- Explicit portable profiles: an empty `rivet-portable` file beside the executable
+  selects adjacent `data` storage and separate instance routing. Existing copies
+  continue to use AppData unless explicitly opted in.
+
+### Fixed
+
+- Add successfully saved documents to Recent Files.
+- Preserve open contents without repeated focus errors after external deletion.
+- Keep the preferred vertical-tab width through minimize and temporary resizing.
+- Paint Find/Replace, Go To Line, and Find in Files backgrounds in both themes,
+  refresh cached dialogs when themes change, and prevent overlapping Find controls.
+- Apply Windows' suggested main-window bounds when DPI changes and refresh margins.
+- Prevent a second process from writing a profile whose existing window is busy.
+
+### Integration
+
+- Integrated the original commits from PRs #8, #9, #10, #11, #14, #16, #17, #19,
+  #20, #21, and #22 with compatibility and safety corrections.
+- Adapted only the standalone main-window DPI change from #25. Native menus,
+  including Help and updater controls, remain in use.
+- Added native regression tests and optimized accelerator-table checks to CI.
+
 ## [0.4.25] - 2026-09-25
 
 Version 0.4.24 was blocked during release validation and was not published.

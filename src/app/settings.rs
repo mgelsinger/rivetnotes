@@ -212,7 +212,7 @@ impl UiSettings {
             .clamp(MIN_LARGE_FILE_THRESHOLD_MB, MAX_LARGE_FILE_THRESHOLD_MB);
         self.recent_files.truncate(MAX_RECENT_FILES);
         self.zoom_level = self.zoom_level.clamp(MIN_ZOOM_LEVEL, MAX_ZOOM_LEVEL);
-        if self.editor_font_name.trim().is_empty() {
+        if self.editor_font_name.trim().is_empty() || self.editor_font_name.contains('\0') {
             self.editor_font_name = DEFAULT_EDITOR_FONT_NAME.to_string();
         }
         self.editor_font_size = self
@@ -294,6 +294,29 @@ fn default_large_file_threshold_mb() -> u32 {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn font_settings_default_normalize_and_roundtrip() {
+        let old: UiSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.editor_font_name, DEFAULT_EDITOR_FONT_NAME);
+        assert_eq!(old.editor_font_size, DEFAULT_EDITOR_FONT_SIZE);
+        let updated = UiSettings {
+            editor_font_name: "Courier New".to_string(),
+            editor_font_size: 16,
+            ..old
+        };
+        let restored: UiSettings =
+            serde_json::from_str(&serde_json::to_string(&updated).unwrap()).unwrap();
+        assert_eq!(restored, updated);
+        let invalid = UiSettings {
+            editor_font_name: "bad\0font".to_string(),
+            editor_font_size: 1000,
+            ..updated
+        }
+        .normalized();
+        assert_eq!(invalid.editor_font_name, DEFAULT_EDITOR_FONT_NAME);
+        assert_eq!(invalid.editor_font_size, MAX_EDITOR_FONT_SIZE);
+    }
     use tempfile::TempDir;
 
     fn with_temp_local_appdata<F>(action: F)

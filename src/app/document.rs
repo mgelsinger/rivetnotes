@@ -464,4 +464,17 @@ mod tests {
         file.flush().unwrap();
         assert!(check_stamp(&path, &Some(stamp)).unwrap().is_some());
     }
+
+    #[test]
+    fn deleted_file_has_no_stamp_but_other_metadata_errors_are_reported() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("note.txt");
+        std::fs::write(&path, b"note").unwrap();
+        let stamp = FileStamp::from_path(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert!(check_stamp(&path, &Some(stamp)).unwrap().is_none());
+        // An invalid Windows path is not the same as a missing file.
+        let invalid = Path::new("invalid\0path");
+        assert!(check_stamp(invalid, &None).is_err());
+    }
 }

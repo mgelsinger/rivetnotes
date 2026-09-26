@@ -5021,6 +5021,10 @@ mod spellcheck_tests;
 #[path = "safety_tests.rs"]
 mod safety_tests;
 
+#[cfg(test)]
+#[path = "pr_integration_tests.rs"]
+mod pr_integration_tests;
+
 /// Debounce a markdown fold recompute. Recomputing on every keystroke walks
 /// the whole document, so we coalesce edits behind a short timer and only act
 /// on the active doc once typing settles.
@@ -7036,7 +7040,7 @@ fn dialog_erase_background(dlg_hwnd: HWND, hdc: HDC) -> LRESULT {
         let _ = GetClientRect(dlg_hwnd, &mut rect);
     }
     // The window class's `hbrBackground` is null, so `DefWindowProc` is a
-    // no-op on `WM_ERASEBKGND` — it does NOT paint white, it leaves
+    // no-op on `WM_ERASEBKGND` - it does NOT paint white, it leaves
     // whatever was already there. We must always paint an explicit brush
     // here (dark or light), never rely on falling through to the default.
     let brush = match dialog_dark_theme(dlg_hwnd) {
@@ -7053,7 +7057,7 @@ fn dialog_erase_background(dlg_hwnd: HWND, hdc: HDC) -> LRESULT {
 /// title-bar dark attribute and re-themes child controls so scrollbars and
 /// borders pick up the dark variant.
 /// `checkboxes` are `BS_AUTOCHECKBOX` controls, which ignore `WM_CTLCOLORBTN`
-/// (and thus our dark text color) while visual styles are active — Windows
+/// (and thus our dark text color) while visual styles are active - Windows
 /// theme-draws their label using the light-mode color regardless of what
 /// the app returns. Stripping their visual style makes them fall back to
 /// classic owner-color-respecting rendering, at the cost of the modern
@@ -7851,7 +7855,7 @@ fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
         );
     }
     // Find/Replace, Goto Line, and Find in Files are cached windows (shown
-    // and hidden, not recreated), so they need to be re-themed here too —
+    // and hidden, not recreated), so they need to be re-themed here too -
     // otherwise a dialog opened before this toggle stays on the old theme
     // until it happens to be closed and reopened.
     if let Some(dialog) = &state.find_dialog {

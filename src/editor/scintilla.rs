@@ -715,7 +715,7 @@ pub fn insert_text(hwnd: HWND, pos: usize, text: &str) {
 }
 
 /// Replaces the current selection (or inserts at the caret if the selection
-/// is empty) with `text`, then leaves the caret positioned after it — the
+/// is empty) with `text`, then leaves the caret positioned after it - the
 /// same behavior as typing or pasting.
 pub fn replace_selection(hwnd: HWND, text: &str) {
     let Ok(text) = CString::new(text) else {

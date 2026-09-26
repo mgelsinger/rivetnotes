@@ -69,6 +69,10 @@ jobs:
         run: cargo test --locked
       - name: Native data-safety regressions
         run: cargo test --locked platform::win32::safety_tests -- --ignored --test-threads=1
+      - name: Native editing and dialog regressions
+        run: cargo test --locked platform::win32::pr_integration_tests -- --ignored --test-threads=1
+      - name: Optimized accelerator regression
+        run: cargo test --release --locked accelerator_table_with_f5_can_be_created_repeatedly
       - name: Legacy uninstall preserves notes
         run: pwsh -File scripts/test-legacy-uninstall.ps1
       - name: Build portable

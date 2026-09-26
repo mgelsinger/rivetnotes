@@ -177,6 +177,32 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::unwrap_used)]
+    fn portable_instances_are_isolated_and_release_their_mutex() {
+        let first_directory = tempfile::tempdir().unwrap();
+        let second_directory = tempfile::tempdir().unwrap();
+        let first = acquire(Some(first_directory.path())).unwrap();
+        let second = acquire(Some(second_directory.path())).unwrap();
+        let duplicate = acquire(Some(first_directory.path())).unwrap();
+        assert!(!first.already_running);
+        assert!(!second.already_running);
+        assert!(duplicate.already_running);
+        assert_eq!(first.window_class, duplicate.window_class);
+        assert_ne!(first.window_class, second.window_class);
+        assert_eq!(
+            instance_names(None),
+            (MUTEX_NAME.to_string(), MAIN_WINDOW_CLASS.to_string())
+        );
+        drop(duplicate);
+        drop(first);
+        assert!(
+            !acquire(Some(first_directory.path()))
+                .unwrap()
+                .already_running
+        );
+    }
+
+    #[test]
     fn encode_decode_round_trip() {
         let paths = vec![
             PathBuf::from(r"C:\notes\a.txt"),
