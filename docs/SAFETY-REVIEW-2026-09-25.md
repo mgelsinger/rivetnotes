@@ -2,7 +2,7 @@
 
 Review started September 25, 2026, against public release 0.4.23
 (`ce7cce2f0a2d9741f0def5808deccdcdbcb058a1`). The changes described here are
-included in version 0.4.24. See the [release](https://github.com/mgelsinger/rivetnotes/releases/tag/v0.4.24)
+included in version 0.4.25. See the [release](https://github.com/mgelsinger/rivetnotes/releases/tag/v0.4.25)
 for publication status and downloadable assets. Testing used isolated profiles
 and did not replace the user's installed copy.
 
@@ -47,6 +47,12 @@ consume disk space during persistent storage failures and should be reviewed
 after recovering the notes. Cleanup validates the generated temporary-name
 format so similarly named ordinary files are not swept up.
 
+GitHub's Windows runner blocked the initial 0.4.24 release attempt on the access
+list regression. A stronger local test then reproduced the missing protection
+flag. Version 0.4.25 uses `SetNamedSecurityInfoW` and asserts both the access list
+and its protection flag before and after replacement. Version 0.4.24 was not
+published; its tag remains as a record of the blocked build.
+
 ## Updater and spellcheck checks
 
 The updater verifies signed metadata, version/platform constraints, installer
@@ -84,7 +90,7 @@ warnings, now fail CI and block release publication.
 
 ## Remaining scope and release checks
 
-- Version 0.4.24 contains these fixes; 0.4.23 does not. The release workflow
+- Version 0.4.25 contains these fixes; 0.4.23 does not. The release workflow
   builds the exact version tag and requires its checks to pass before publication.
 - Complete visual light/dark, DPI, tab-layout, IME, and accessibility checks on
   the release candidate. Hidden controls verify behavior but not appearance.

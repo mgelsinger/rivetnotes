@@ -4,7 +4,7 @@ Rivet is a Windows-native text editor focused on fast startup, clean behavior,
 and reliable recovery. It is intentionally compact: the core workflows are
 implemented deeply instead of spreading effort across a large plugin surface.
 
-Version 0.4.24 improves save/recovery safety and reliability, building on the
+Version 0.4.25 improves save/recovery safety and reliability, building on the
 spellcheck and optional automatic updates introduced in 0.4.23. See the
 [releases](https://github.com/mgelsinger/rivetnotes/releases) and
 [changelog](CHANGELOG.md) for downloads and version history.
@@ -195,7 +195,7 @@ Rivet stores state under `%LOCALAPPDATA%\Rivet` (fallback `%APPDATA%\Rivet`):
   and avoids directory junctions and symbolic links. Narrow the search if a limit
   is reported. Its text decoding currently targets UTF-8 files.
 - The [September safety review](docs/SAFETY-REVIEW-2026-09-25.md) records fixes,
-  test evidence, and remaining manual checks for version 0.4.24.
+  test evidence, and remaining manual checks for version 0.4.25.
 - Desktop and updater integration tests can be run with
   `cargo test -- --ignored --test-threads=1`. They require an installed Windows
   spelling provider and internet access, and use a hidden editor with temporary

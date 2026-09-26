@@ -5,13 +5,17 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 ## [Unreleased]
 
-## [0.4.24] - 2026-09-25
+## [0.4.25] - 2026-09-25
+
+Version 0.4.24 was blocked during release validation and was not published.
 
 ### Fixed
 
 - Save documents atomically instead of truncating the existing file. Preserve
   access permissions and named streams; retain recovery copies if replacement
   fails and report their paths.
+- Use the Windows security API that explicitly protects staged access lists
+  from inherited permissions. Test the protection flag before and after saving.
 - Preserve embedded NUL characters and the original encoding/EOL through
   editing, recovery, and saving.
 - Prompt before closing an unsaved tab, even with periodic snapshots enabled.
@@ -37,7 +41,7 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
   operations; rebuild the native libraries when their headers change.
 - Make dependency audits and native data-safety regressions CI/release gates.
 
-See [the safety review](https://github.com/mgelsinger/rivetnotes/blob/v0.4.24/docs/SAFETY-REVIEW-2026-09-25.md) for validation and limits.
+See [the safety review](https://github.com/mgelsinger/rivetnotes/blob/v0.4.25/docs/SAFETY-REVIEW-2026-09-25.md) for validation and limits.
 
 ## [0.4.23] - 2026-09-25
 

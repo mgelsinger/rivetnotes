@@ -11,9 +11,13 @@ use std::os::windows::ffi::OsStrExt;
 #[cfg(windows)]
 use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 #[cfg(windows)]
+use windows::Win32::Foundation::{BOOL, PSID};
+#[cfg(windows)]
+use windows::Win32::Security::Authorization::{SE_FILE_OBJECT, SetNamedSecurityInfoW};
+#[cfg(windows)]
 use windows::Win32::Security::{
-    DACL_SECURITY_INFORMATION, GetFileSecurityW, PROTECTED_DACL_SECURITY_INFORMATION,
-    PSECURITY_DESCRIPTOR, SetFileSecurityW,
+    DACL_SECURITY_INFORMATION, GetFileSecurityW, GetSecurityDescriptorDacl,
+    PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR,
 };
 
 #[cfg(windows)]
@@ -117,18 +121,34 @@ fn read_dacl(path: &Path) -> io::Result<Vec<u32>> {
 fn protect_replacement(dest: &Path, temp: &Path) -> io::Result<()> {
     let mut descriptor = read_dacl(dest)?;
     let wide = path_to_wide(temp);
-    // Apply the original access list before writing any contents. Protect it
-    // against broader permissions inherited from the containing directory.
-    if !unsafe {
-        SetFileSecurityW(
-            PCWSTR(wide.as_ptr()),
-            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+    let mut present = BOOL(0);
+    let mut defaulted = BOOL(0);
+    let mut dacl = std::ptr::null_mut();
+    unsafe {
+        GetSecurityDescriptorDacl(
             PSECURITY_DESCRIPTOR(descriptor.as_mut_ptr().cast()),
+            &mut present,
+            &mut dacl,
+            &mut defaulted,
         )
     }
-    .as_bool()
-    {
-        return Err(io::Error::last_os_error());
+    .map_err(|error| io::Error::other(error.to_string()))?;
+    // Apply the original access list before writing any contents. Protect it
+    // against broader permissions inherited from the containing directory.
+    // The legacy SetFileSecurityW API does not apply the protected-DACL flag.
+    let result = unsafe {
+        SetNamedSecurityInfoW(
+            PCWSTR(wide.as_ptr()),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            PSID::default(),
+            PSID::default(),
+            Some(dacl),
+            None,
+        )
+    };
+    if result.is_err() {
+        return Err(io::Error::from_raw_os_error(result.0 as i32));
     }
     Ok(())
 }
@@ -379,7 +399,28 @@ mod tests {
     #[test]
     fn staging_and_replacement_preserve_access_list() {
         use windows::Win32::Foundation::BOOL;
-        use windows::Win32::Security::{ACL, GetSecurityDescriptorDacl};
+        use windows::Win32::Security::{
+            ACL, GetSecurityDescriptorControl, GetSecurityDescriptorDacl, SE_DACL_PROTECTED,
+        };
+        fn assert_protected(path: &Path) {
+            let mut descriptor = read_dacl(path).unwrap();
+            let mut control = 0;
+            let mut revision = 0;
+            unsafe {
+                GetSecurityDescriptorControl(
+                    PSECURITY_DESCRIPTOR(descriptor.as_mut_ptr().cast()),
+                    &mut control,
+                    &mut revision,
+                )
+                .unwrap();
+            }
+            assert_ne!(
+                control & SE_DACL_PROTECTED.0,
+                0,
+                "Access list is not protected: {}",
+                path.display()
+            );
+        }
         fn acl_bytes(path: &Path) -> Vec<u8> {
             let mut descriptor = read_dacl(path).unwrap();
             let mut present = BOOL(0);
@@ -403,10 +444,13 @@ mod tests {
         std::fs::write(&original, b"original").unwrap();
         std::fs::write(&replacement, b"").unwrap();
         protect_replacement(&original, &original).unwrap();
+        assert_protected(&original);
         let acl = acl_bytes(&original);
         protect_replacement(&original, &replacement).unwrap();
+        assert_protected(&replacement);
         assert_eq!(acl_bytes(&replacement), acl);
         atomic_write_bytes(&original, b"new contents").unwrap();
+        assert_protected(&original);
         assert_eq!(acl_bytes(&original), acl);
         assert_eq!(std::fs::read(&original).unwrap(), b"new contents");
     }
