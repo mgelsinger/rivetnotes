@@ -4,7 +4,7 @@ Rivet is a Windows-native text editor focused on fast startup, clean behavior,
 and reliable recovery. It is intentionally compact: the core workflows are
 implemented deeply instead of spreading effort across a large plugin surface.
 
-Version 0.4.26 adds font selection, a line-number toggle, date/time insertion,
+Version 0.4.27 adds font selection, a line-number toggle, date/time insertion,
 better save defaults, and explicit portable profiles, with fixes for Recent
 Files, window layout, and dialog themes. See the
 [releases](https://github.com/mgelsinger/rivetnotes/releases) and
