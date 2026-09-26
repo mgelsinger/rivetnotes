@@ -46,6 +46,10 @@ impl FileStamp {
     pub fn from_path(path: &Path) -> Result<Self> {
         let meta = std::fs::metadata(path)
             .map_err(|err| AppError::new(format!("Failed to read metadata: {err}")))?;
+        Self::from_metadata(meta)
+    }
+
+    fn from_metadata(meta: std::fs::Metadata) -> Result<Self> {
         let modified = meta
             .modified()
             .map_err(|err| AppError::new(format!("Failed to read modified time: {err}")))?;
@@ -264,7 +268,14 @@ pub fn encode_text(text: &str, encoding: TextEncoding) -> Result<Vec<u8>> {
 }
 
 pub fn check_stamp(path: &Path, stamp: &Option<FileStamp>) -> Result<Option<FileStamp>> {
-    let new_stamp = FileStamp::from_path(path)?;
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        // Deleted or renamed files keep their open editor contents. Check the
+        // operation itself so a deletion cannot race an earlier exists() test.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(AppError::new(format!("Failed to read metadata: {error}"))),
+    };
+    let new_stamp = FileStamp::from_metadata(metadata)?;
     let changed = match stamp {
         Some(old) => old.modified != new_stamp.modified || old.size != new_stamp.size,
         None => true,

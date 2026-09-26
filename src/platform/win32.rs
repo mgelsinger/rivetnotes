@@ -10,10 +10,11 @@ use windows::Win32::Foundation::{
     POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreatePen, CreateSolidBrush, DT_CENTER, DT_END_ELLIPSIS, DT_HIDEPREFIX,
-    DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawTextW, EndPaint, FillRect, HBRUSH,
-    HDC, HGDIOBJ, InvalidateRect, LineTo, MONITOR_DEFAULTTONULL, MonitorFromRect, MoveToEx,
-    PAINTSTRUCT, PS_SOLID, ScreenToClient, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
+    BeginPaint, COLOR_BTNFACE, CreatePen, CreateSolidBrush, DT_CENTER, DT_END_ELLIPSIS,
+    DT_HIDEPREFIX, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawTextW, EndPaint,
+    FillRect, GetSysColorBrush, HBRUSH, HDC, HGDIOBJ, InvalidateRect, LineTo,
+    MONITOR_DEFAULTTONULL, MonitorFromRect, MoveToEx, PAINTSTRUCT, PS_SOLID, ScreenToClient,
+    SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
@@ -1484,7 +1485,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         WM_SIZE => {
-            if let Some(state) = get_state(hwnd) {
+            if let Some(state) = get_state(hwnd)
+                && !unsafe { IsIconic(hwnd) }.as_bool()
+            {
                 layout_children(hwnd, state);
             }
             LRESULT(0)
@@ -2686,9 +2689,9 @@ fn layout_children(hwnd: HWND, state: &mut AppState) {
     let list_width = match state.tab_host.placement {
         TabPlacement::Top => 0,
         TabPlacement::Left | TabPlacement::Right => {
-            let adjusted = clamp_vertical_tab_width(state, state.tab_host.vertical_width_px, width);
-            state.tab_host.vertical_width_px = adjusted;
-            adjusted
+            // Layout may temporarily be narrower than the user's preference.
+            // Only an explicit splitter drag should change the stored width.
+            clamp_vertical_tab_width(state, state.tab_host.vertical_width_px, width)
         }
     };
     let editor_height = (height - status_height - tab_height).max(0);
@@ -3013,6 +3016,7 @@ fn save_document_at(
     update_tab_text(state, index);
     update_title(hwnd, state);
     update_status(state);
+    note_recent_file(hwnd, state, &path);
     if let Err(err) = save_session_checkpoint(hwnd, state) {
         logging::log_error(&format!("session_save_after_manual_save_failed err={err}"));
     }
@@ -3417,6 +3421,15 @@ fn show_find_dialog(hwnd: HWND, state: &mut AppState, mode: SearchDialogMode) ->
     state.search_dialog_mode = mode;
     seed_search_text_from_selection(state);
     if let Some(dialog) = &state.find_dialog {
+        apply_dialog_dark_mode(
+            dialog.hwnd,
+            &[
+                dialog.match_case,
+                dialog.whole_word,
+                dialog.regex,
+                dialog.wrap,
+            ],
+        );
         unsafe {
             ShowWindow(dialog.hwnd, SW_SHOW);
             let _ = SetFocus(dialog.find_edit);
@@ -3426,7 +3439,7 @@ fn show_find_dialog(hwnd: HWND, state: &mut AppState, mode: SearchDialogMode) ->
     }
 
     let instance = module_instance()?;
-    let width = scale_for_dpi(hwnd, 460);
+    let width = scale_for_dpi(hwnd, 520);
     let height = scale_for_dpi(hwnd, 240);
     let hwnd_dialog = unsafe {
         CreateWindowExW(
@@ -3483,6 +3496,7 @@ fn show_go_to_line_dialog(hwnd: HWND, state: &mut AppState) -> Result<()> {
         return Ok(());
     }
     if let Some(dialog) = &state.go_to_line_dialog {
+        apply_dialog_dark_mode(dialog.hwnd, &[]);
         unsafe {
             ShowWindow(dialog.hwnd, SW_SHOW);
             let _ = SetFocus(dialog.line_edit);
@@ -3575,6 +3589,15 @@ fn close_go_to_line_dialog(main_hwnd: HWND, state: &mut AppState) {
 
 fn show_find_in_files_dialog(hwnd: HWND, state: &mut AppState) -> Result<()> {
     if let Some(dialog) = &state.find_in_files {
+        apply_dialog_dark_mode(
+            dialog.hwnd,
+            &[
+                dialog.match_case,
+                dialog.whole_word,
+                dialog.regex,
+                dialog.recurse,
+            ],
+        );
         unsafe {
             ShowWindow(dialog.hwnd, SW_SHOW);
         }
@@ -6734,13 +6757,48 @@ fn dialog_ctl_color(dlg_hwnd: HWND, hdc: HDC, edit_like: bool) -> Option<LRESULT
     Some(LRESULT(brush.0))
 }
 
+/// Handles `WM_ERASEBKGND` for a dialog window. These dialogs are plain
+/// `CreateWindowExW` windows with a null class background brush (not real
+/// dialog-box windows), so nothing ever paints the client area outside of
+/// child controls. Paint explicitly in both light and dark mode.
+fn dialog_erase_background(dlg_hwnd: HWND, hdc: HDC) -> LRESULT {
+    let mut rect = windows::Win32::Foundation::RECT::default();
+    unsafe {
+        let _ = GetClientRect(dlg_hwnd, &mut rect);
+    }
+    // The window class's `hbrBackground` is null, so `DefWindowProc` is a
+    // no-op on `WM_ERASEBKGND` — it does NOT paint white, it leaves
+    // whatever was already there. We must always paint an explicit brush
+    // here (dark or light), never rely on falling through to the default.
+    let brush = match dialog_dark_theme(dlg_hwnd) {
+        Some(theme) => dark_mode::cached_solid_brush(theme.bg),
+        None => unsafe { GetSysColorBrush(COLOR_BTNFACE) },
+    };
+    unsafe {
+        let _ = FillRect(hdc, &rect, brush);
+    }
+    LRESULT(1)
+}
+
 /// Called from dialog `WM_CREATE` once all child controls exist. Applies the
 /// title-bar dark attribute and re-themes child controls so scrollbars and
 /// borders pick up the dark variant.
-fn apply_dialog_dark_mode(dlg_hwnd: HWND) {
+/// `checkboxes` are `BS_AUTOCHECKBOX` controls, which ignore `WM_CTLCOLORBTN`
+/// (and thus our dark text color) while visual styles are active — Windows
+/// theme-draws their label using the light-mode color regardless of what
+/// the app returns. Stripping their visual style makes them fall back to
+/// classic owner-color-respecting rendering, at the cost of the modern
+/// checkbox glyph.
+fn apply_dialog_dark_mode(dlg_hwnd: HWND, checkboxes: &[HWND]) {
     let dark = dialog_dark_theme(dlg_hwnd).is_some();
     dark_mode::apply_to_window(dlg_hwnd, dark);
     dark_mode::theme_child_controls(dlg_hwnd, dark);
+    for &checkbox in checkboxes {
+        dark_mode::set_checkbox_dark_mode(checkbox, dark);
+    }
+    unsafe {
+        let _ = InvalidateRect(dlg_hwnd, None, true);
+    }
 }
 
 fn loword(value: usize) -> u16 {
@@ -7515,6 +7573,35 @@ fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
         );
     }
+    // Find/Replace, Goto Line, and Find in Files are cached windows (shown
+    // and hidden, not recreated), so they need to be re-themed here too —
+    // otherwise a dialog opened before this toggle stays on the old theme
+    // until it happens to be closed and reopened.
+    if let Some(dialog) = &state.find_dialog {
+        apply_dialog_dark_mode(
+            dialog.hwnd,
+            &[
+                dialog.match_case,
+                dialog.whole_word,
+                dialog.regex,
+                dialog.wrap,
+            ],
+        );
+    }
+    if let Some(dialog) = &state.go_to_line_dialog {
+        apply_dialog_dark_mode(dialog.hwnd, &[]);
+    }
+    if let Some(dialog) = &state.find_in_files {
+        apply_dialog_dark_mode(
+            dialog.hwnd,
+            &[
+                dialog.match_case,
+                dialog.whole_word,
+                dialog.regex,
+                dialog.recurse,
+            ],
+        );
+    }
     persist_ui_settings(state);
 }
 
@@ -8106,7 +8193,7 @@ unsafe extern "system" fn find_wndproc(
                     w!("Button"),
                     w!("Find Next"),
                     button_style,
-                    scale(360),
+                    scale(420),
                     scale(10),
                     scale(90),
                     scale(22),
@@ -8120,7 +8207,7 @@ unsafe extern "system" fn find_wndproc(
                     w!("Button"),
                     w!("Find Prev"),
                     button_style,
-                    scale(360),
+                    scale(420),
                     scale(40),
                     scale(90),
                     scale(22),
@@ -8134,7 +8221,7 @@ unsafe extern "system" fn find_wndproc(
                     w!("Button"),
                     w!("Replace"),
                     button_style,
-                    scale(360),
+                    scale(420),
                     scale(70),
                     scale(90),
                     scale(22),
@@ -8148,7 +8235,7 @@ unsafe extern "system" fn find_wndproc(
                     w!("Button"),
                     w!("Replace All"),
                     button_style,
-                    scale(360),
+                    scale(420),
                     scale(100),
                     scale(90),
                     scale(22),
@@ -8176,7 +8263,7 @@ unsafe extern "system" fn find_wndproc(
                     w!("Button"),
                     w!("Close"),
                     button_style,
-                    scale(360),
+                    scale(420),
                     scale(130),
                     scale(90),
                     scale(22),
@@ -8230,9 +8317,10 @@ unsafe extern "system" fn find_wndproc(
                     let _ = SetFocus(find_edit);
                 }
             }
-            apply_dialog_dark_mode(hwnd);
+            apply_dialog_dark_mode(hwnd, &[match_case, whole_word, regex, wrap]);
             LRESULT(0)
         }
+        WM_ERASEBKGND => dialog_erase_background(hwnd, HDC(wparam.0 as isize)),
         WM_CTLCOLORDLG | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
             if let Some(r) = dialog_ctl_color(hwnd, HDC(wparam.0 as isize), false) {
                 return r;
@@ -8400,9 +8488,10 @@ unsafe extern "system" fn goto_line_wndproc(
                     let _ = SetFocus(line_edit);
                 }
             }
-            apply_dialog_dark_mode(hwnd);
+            apply_dialog_dark_mode(hwnd, &[]);
             LRESULT(0)
         }
+        WM_ERASEBKGND => dialog_erase_background(hwnd, HDC(wparam.0 as isize)),
         WM_CTLCOLORDLG | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
             if let Some(r) = dialog_ctl_color(hwnd, HDC(wparam.0 as isize), false) {
                 return r;
@@ -8806,9 +8895,10 @@ unsafe extern "system" fn find_in_files_wndproc(
                 });
             }
 
-            apply_dialog_dark_mode(hwnd);
+            apply_dialog_dark_mode(hwnd, &[match_case, whole_word, regex, recurse]);
             LRESULT(0)
         }
+        WM_ERASEBKGND => dialog_erase_background(hwnd, HDC(wparam.0 as isize)),
         WM_CTLCOLORDLG | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
             if let Some(r) = dialog_ctl_color(hwnd, HDC(wparam.0 as isize), false) {
                 return r;
