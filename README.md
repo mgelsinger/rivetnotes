@@ -4,9 +4,9 @@ Rivet is a Windows-native text editor focused on fast startup, clean behavior,
 and reliable recovery. It is intentionally compact: the core workflows are
 implemented deeply instead of spreading effort across a large plugin surface.
 
-This README describes the current source. For features available in published
-builds, see the [releases](https://github.com/mgelsinger/rivetnotes/releases) and
-[changelog](CHANGELOG.md).
+Version 0.4.23 introduces spellcheck and optional automatic updates. See the
+[releases](https://github.com/mgelsinger/rivetnotes/releases) and
+[changelog](CHANGELOG.md) for downloads and version history.
 
 ## Why Rivet
 
@@ -131,8 +131,13 @@ Downloads must match signed release metadata and a verified installer hash.
 Rivet never forces a Windows restart. Windows security prompts are controlled
 by Windows and can still appear.
 
-Versions without the updater need one manual installation of an updater-enabled
-release first. Maintainers: see [the updater plan](docs/QUIET-UPDATER-PLAN.md) and
+Public versions through 0.4.22 need one manual installation of 0.4.23 or later
+before they can receive automatic updates. To check an update manually, choose
+`Help > Check for updates`, wait for the status bar to report that the update is
+ready, and choose `Help > Restart to update`. Confirm the installed version in
+`Help > About Rivet` after Rivet reopens.
+
+Maintainers: see [the updater plan](docs/QUIET-UPDATER-PLAN.md) and
 [release instructions](docs/UPDATER-RELEASES.md).
 
 ## Shell Integration

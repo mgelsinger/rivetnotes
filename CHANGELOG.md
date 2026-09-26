@@ -5,6 +5,8 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 ## [Unreleased]
 
+## [0.4.23] - 2026-09-25
+
 ### Added
 
 - Optional background updates, disabled by default, with status-bar progress
@@ -15,7 +17,6 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
   quiet; cancelling approval keeps the update pending and reopens Rivet.
 - Signed release metadata, verified installer downloads, and release automation
   that publishes the update feed only after all release files are uploaded.
-
 - Spelling underlines for notes, plain text, and Markdown prose using installed
   Windows dictionaries. `View > Spellcheck` toggles the feature and remembers
   the preference. Checks run in the background after typing pauses, without
@@ -29,6 +30,17 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
   file handling with fixed-size array chunks to resolve current CI lint failures.
 - Restrict test-only `unwrap` allowances to test modules and check all targets
   in CI, keeping production error-handling checks strict.
+- Update the ANSI decoding test for the current Clippy byte-string lint.
+- Find per-user Inno Setup installations when building and testing installers.
+
+### Upgrading
+
+- This is the first public release with the optional updater. Install it once
+  over an older public version to enable future automatic updates.
+- Automatic updates remain off by default. Use `Help > Restart to update`
+  after a manual download, or enable `Automatically update on exit` for a
+  per-user installation. Shared installations require an explicit restart and
+  Windows administrator approval.
 
 ## [0.4.22] - 2026-07-05
 

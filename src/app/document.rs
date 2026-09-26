@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn non_utf8_bytes_fall_back_to_ansi() {
         // 0xE9 is 'é' in Windows-1252 but an invalid lone UTF-8 lead byte.
-        let bytes = [b'c', b'a', b'f', b'\xE9'];
+        let bytes = *b"caf\xE9";
         let (decoded, encoding) = decode_bytes(&bytes).unwrap();
         assert_eq!(encoding, TextEncoding::Ansi);
         assert_eq!(decoded, "café");

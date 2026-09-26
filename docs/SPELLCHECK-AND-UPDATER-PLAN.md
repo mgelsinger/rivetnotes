@@ -3,7 +3,7 @@
 Assessed September 20, 2026 against Rivet v0.4.22. This is an implementation plan based on repository inspection and current upstream documentation. Neither feature has been implemented or prototyped as part of this assessment.
 
 Follow-up status: spelling underlines, the existing lint fixes, and the optional
-updater are implemented under the Unreleased changelog. The implemented updater
+updater are implemented for v0.4.23. The implemented updater
 uses signed metadata and Rivet's existing status bar; its current behavior and
 validation status are documented in [the quiet-updater plan](QUIET-UPDATER-PLAN.md).
 The original assessment and estimates below are retained as historical context.

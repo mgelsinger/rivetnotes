@@ -28,15 +28,17 @@ Test modified manifests and downloads, wrong keys, downgrades/prereleases, overs
 
 ## Implementation status
 
-Implemented under the Unreleased changelog. Formatting, all-target Clippy, 131 regular
+Implemented for v0.4.23. Formatting, all-target Clippy, 131 regular
 tests, five explicitly run native/network/helper tests, and the optimized build
 pass. Production-key signing and tampered-payload rejection also pass. The
-GitHub repository signing secret is configured. No release has been published.
+GitHub repository signing secret is configured. The v0.4.23 release workflow
+publishes the first stable update feed after both installer scopes pass.
 
-The installer smoke test is implemented and required by the release workflow,
-but has not been executed locally. Automatic approval review rejected installing
-the missing Inno Setup compiler with the reason "blocked by policy". A release
-must pass both installer scopes before publication. Interactive UAC acceptance,
-cancellation, and alternate-admin credentials also need a Windows manual check.
+The per-user installer smoke test passes locally with the existing per-user
+Inno Setup compiler. It verifies silent installation and upgrade, file locking,
+no automatic relaunch, and the app/setup mutex protections. Both installer scopes
+are required by the release workflow; the system-wide test still needs an
+elevated session. Interactive UAC acceptance, cancellation, and alternate-admin
+credentials also need a Windows manual check.
 See `UPDATER-RELEASES.md` for
 the bootstrap and key-backup procedure.
