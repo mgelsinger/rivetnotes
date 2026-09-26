@@ -1,249 +1,132 @@
+<div align="center">
+
 # Rivet
 
-Rivet is a Windows-native text editor focused on fast startup, clean behavior,
-and reliable recovery. It is intentionally compact: the core workflows are
-implemented deeply instead of spreading effort across a large plugin surface.
+**A little room to think.**
 
-Version 0.4.27 adds font selection, a line-number toggle, date/time insertion,
-better save defaults, and explicit portable profiles, with fixes for Recent
-Files, window layout, and dialog themes. See the
-[releases](https://github.com/mgelsinger/rivetnotes/releases) and
-[changelog](CHANGELOG.md) for downloads and version history.
+A compact, native Windows editor for notes, drafts, and everyday text files.
 
-## Why Rivet
+[Download for Windows](https://github.com/mgelsinger/rivetnotes/releases/latest) · [User guide](docs/USAGE.md) · [Changelog](CHANGELOG.md) · [Report an issue](https://github.com/mgelsinger/rivetnotes/issues)
 
-- Native Win32 UI with a Scintilla editing engine
-- Strong session recovery model with periodic snapshots and crash-safe writes
-- Fast, predictable keyboard-driven editing flow
-- Minimal visual noise with a practical status bar and focused menus
-- Spelling underlines for notes and Markdown, using Windows dictionaries
-- Optional background updates with controls in the existing status bar
+[![Latest release](https://img.shields.io/github/v/release/mgelsinger/rivetnotes?color=2563eb)](https://github.com/mgelsinger/rivetnotes/releases/latest)
+[![Build checks](https://github.com/mgelsinger/rivetnotes/actions/workflows/ci.yml/badge.svg)](https://github.com/mgelsinger/rivetnotes/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-64748b)](LICENSE)
 
-## Core Capabilities
+</div>
 
-### Editing
+![Rivet in dark mode with vertical tabs and a Markdown note](docs/images/rivet-dark.png)
 
-- Multi-document tabs with three placements:
-  - `Top` (classic horizontal tabs)
-  - `Left` (vertical list)
-  - `Right` (vertical list)
-- Resizable vertical tab panel with persisted width
-- Dirty document indicators in both top and vertical tab views
-- Word wrap toggle and `Always On Top` toggle in the `View` menu
-- `View > Font...` selects the editor's font family and size, remembered across
-  sessions. The default remains Consolas 11; zoom still works independently.
-- `View > Line Numbers` shows or hides the gutter, remembered across sessions
-- `Edit > Insert Date/Time` (`F5`) inserts local time as `YYYY-MM-DD HH:MM`
-- Save dialogs start with the current tab name and default to the selected
-  language's extension. Auto mode preserves an existing file's extension.
-- Zoom (menu, shortcuts, or Ctrl+mousewheel) shared across all tabs and
-  persisted between sessions
-- Live word count in the status bar
-- `Reload from Disk` in the `File` menu (with unsaved-changes confirmation)
+*Rivet 0.4.27, with sample notes. Native menus, vertical tabs, and Markdown highlighting.*
 
-### Search and Navigation
+Rivet keeps the everyday things close: a few open notes, a quick search, a saved
+session, and a place to pick up where you left off. It uses a native Win32
+interface and the Scintilla editing engine, with a deliberately compact feature set.
 
-- Find/Replace workflow:
-  - `Ctrl+F`, `Ctrl+H`
-  - `F3`, `Shift+F3`
-  - Match case, whole word, regex, wrap
-  - `Replace All` grouped into a single undo step
-- `Go To Line` (`Ctrl+G`)
-- Find in Files with cancellation, validated regexes, and bounded results
+<details>
+<summary>See the light theme</summary>
 
-### File and Session Safety
+![Rivet in light mode with horizontal tabs and a Markdown note](docs/images/rivet-light.png)
 
-- Session restore with open tabs and active tab tracking
-- Recent Files (MRU) menu, persisted across sessions
-- Encoding detection: UTF-8, UTF-8 BOM, UTF-16 LE/BE, with Windows-1252
-  (ANSI) fallback for legacy files
-- Periodic backup snapshots for unsaved changes
-- Atomic document saves, session writes, and backups, with recovery copies on
-  replacement failure
-- Dirty-tab close confirmation; final recovery checkpoints on close and Windows
-  sign-out/shutdown
-- Encoding and embedded NUL preservation through backup and restore
-- Stale temp cleanup at startup
+Light and dark themes can be switched from the View menu. Tabs can sit at the
+top, left, or right of the editor.
 
-### Language and Text Tools
+</details>
 
-- Syntax highlighting for common formats (JSON, XML, Python, PowerShell,
-  YAML, HTML, CSS, C/C++, and **Markdown**)
-- Markdown heading folding (code-fence aware)
-- Text transforms:
-  - `Uppercase`
-  - `Lowercase`
-  - `Trim Leading + Trailing Whitespace`
-- Clipboard path helpers:
-  - `Copy Full Path`
-  - `Copy Filename`
-  - `Copy Directory Path`
+## Get Rivet
 
-### Spellcheck
+**[Download the latest release](https://github.com/mgelsinger/rivetnotes/releases/latest)** for Windows x64.
 
-- Spelling underlines for untitled notes, plain text, and Markdown prose using
-  installed Windows dictionaries, enabled by default. Toggle with `View > Spellcheck`.
-  The preference is remembered between sessions. Checking happens after a short
-  typing pause, without changing your text or undo history.
-- Spelling uses the Windows regional language when supported, with installed
-  US/UK English as fallbacks. If none is available, add the language's Basic typing
-  feature in Windows Settings and turn Spellcheck off and on again.
-- URLs, email addresses, and Markdown code/link destinations are excluded.
-  Source files are skipped unless you explicitly choose `View > Language > Plain Text`
-  or Markdown. Checks are disabled in Large File Mode and above 2 MiB; Markdown
-  physical lines longer than 16 KiB are skipped to keep checks bounded.
+| Choose | Download | Getting started |
+| --- | --- | --- |
+| **Installer** | `rivet-<version>-setup.exe` | Install for your account or for all users. Includes Explorer integration and optional updates. |
+| **Portable ZIP** | `rivet-<version>-win64-portable.zip` | Extract and run `rivet.exe`. No installation required. |
 
-## Keyboard Shortcuts
+The ZIP uses AppData for settings and recovery by default. To keep everything
+beside the executable, opt into a [self-contained portable profile](docs/USAGE.md#self-contained-portable-profiles).
+
+Already using Rivet 0.4.23 or later? Open **Help > Check for updates**.
+Earlier versions need one manual installation of a current release.
+
+## What it does
+
+| For your everyday work | In Rivet |
+| --- | --- |
+| **Keep several things open** | Tabs across the top or down either side, with a resizable vertical strip and remembered layout. |
+| **Pick up where you left off** | Session restore, periodic recovery snapshots, and confirmation before closing an edited tab. |
+| **Find the right words** | Find and replace, regular expressions, Find in Files, and Go to Line. |
+| **Make the editor comfortable** | Light and dark themes, font selection, zoom, word wrap, and optional line numbers. |
+| **Work with plain text and code** | Syntax highlighting for Markdown and common source/configuration formats, Markdown heading folding, and preserved text encodings. |
+| **Handle the small jobs quickly** | F5 date/time insertion, case conversion, whitespace cleanup, recent files, and path-copy commands. |
+
+### A spelling nudge
+
+Misspelled words get a small underline in notes and Markdown prose. **Underlines
+only: no suggestions, autocorrect, or changes to your text.** Spellcheck uses
+installed Windows dictionaries and can be toggled in **View > Spellcheck**.
+
+URLs, email addresses, and Markdown code are excluded. Source files and large
+documents are normally skipped. See [spellcheck details](docs/USAGE.md#spellcheck)
+for supported languages and limits.
+
+### Updates on your terms
+
+Automatic updates are **off by default**. Enable them from Help for background
+checks and downloads, with progress in the existing status bar.
+
+| Your installation | Update behavior |
+| --- | --- |
+| **For your account** | Can update quietly when you close Rivet. Choose **Restart to update** to reopen afterward. |
+| **For all users** | Downloads in the background, then waits for an explicit restart with administrator approval. |
+| **Portable ZIP** | Replace the executable manually, keeping your profile data. |
+
+There is no separate updater window. Windows may still show its own security or
+administrator prompts. Rivet verifies signed update metadata and the installer
+hash before installation. [How updates work](docs/USAGE.md#optional-updates)
+
+## Useful shortcuts
 
 | Action | Shortcut |
-|---|---|
-| New file | `Ctrl+N` |
-| Open | `Ctrl+O` |
-| Save | `Ctrl+S` |
-| Save all | `Ctrl+Shift+S` |
+| --- | --- |
+| New / Open | `Ctrl+N` / `Ctrl+O` |
+| Save / Save all | `Ctrl+S` / `Ctrl+Shift+S` |
 | Close tab | `Ctrl+W` |
+| Next / Previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | Cycle tab placement | `Ctrl+Alt+T` |
-| Find | `Ctrl+F` |
-| Replace | `Ctrl+H` |
-| Insert date/time | `F5` |
-| Find next / previous | `F3` / `Shift+F3` |
+| Find / Replace | `Ctrl+F` / `Ctrl+H` |
+| Find next / Previous | `F3` / `Shift+F3` |
 | Go to line | `Ctrl+G` |
+| Insert date/time | `F5` |
 | Uppercase / Lowercase | `Ctrl+Shift+U` / `Ctrl+U` |
-| Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
+| Zoom in / Out / Reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 
-## Installation
+## Project status and feedback
 
-- [Download an installer or portable build](https://github.com/mgelsinger/rivetnotes/releases/latest).
-- Installer: `rivet-<version>-setup.exe`, with per-user or system-wide installation.
-- Portable: `rivet-<version>-win64-portable.zip`.
-- If SmartScreen warns, use `More info` then `Run anyway`
+Rivet is a pre-1.0 project. The current focus is **stability, polish, and feedback
+from everyday use**. The feature set is intentionally compact; the next steps
+will be guided by how people use the editor over time.
 
-## Optional Updates
+Bug reports and practical suggestions are welcome in
+[GitHub Issues](https://github.com/mgelsinger/rivetnotes/issues). For a bug, include
+your Rivet version from **Help > About Rivet**, your Windows version, and the steps
+to reproduce it. Use sample text when sharing a screenshot or a file.
 
-Updates are **off by default**. Enable them in Help to check once a day and
-download in the background. Progress and the ready action appear in Rivet's
-existing status bar, with no separate updater window or installer wizard.
+Please discuss substantial feature additions before opening a pull request.
+See [Contributing](CONTRIBUTING.md) for the workflow.
 
-| Installation | Help-menu option | When installation happens |
-| --- | --- | --- |
-| Per-user installer | `Automatically update on exit` | Quietly after a normal close, leaving Rivet closed. Choose `Restart to update` to reopen afterward. |
-| System-wide installer | `Automatically download updates` | Only after `Restart to update (administrator approval)`. Windows may request consent or administrator credentials. |
-| Portable or script-installed | Manual updates | Download and replace the installed files yourself. |
+## Documentation and development
 
-Ordinary closing of a system-wide install never requests administrator approval.
-If approval is cancelled, Rivet reopens and leaves the update pending. Updates
-preserve the existing installation directory and scope.
+- [User guide](docs/USAGE.md): spelling, updates, portable profiles, and data locations.
+- [Development guide](docs/DEVELOPMENT.md): building from source and running checks.
+- [Architecture](docs/ARCHITECTURE.md): how the editor is organized.
+- [Manual QA checklist](docs/QA-CHECKLIST.md): interactive checks alongside automated tests.
+- [Changelog](CHANGELOG.md): release history.
 
-`Help > Check for updates` checks immediately and reports the result inline.
-With automatic updates off, a manual download installs only when you choose
-`Restart to update`. Turning the automatic option off cancels pending work.
-Normal save checks still apply: cancelling or failing a save postpones the
-update. Restarts follow your existing session preferences.
-
-Downloads must match signed release metadata and a verified installer hash.
-Rivet never forces a Windows restart. Windows security prompts are controlled
-by Windows and can still appear.
-
-Public versions through 0.4.22 need one manual installation of 0.4.23 or later
-before they can receive automatic updates. To check an update manually, choose
-`Help > Check for updates`, wait for the status bar to report that the update is
-ready, and choose `Help > Restart to update`. Confirm the installed version in
-`Help > About Rivet` after Rivet reopens.
-
-Maintainers: see [the updater plan](docs/QUIET-UPDATER-PLAN.md) and
-[release instructions](docs/UPDATER-RELEASES.md).
-
-## Shell Integration
-
-- Open files from the command line: `rivet.exe <file> [more files]`
-- Single instance per profile: files launched while Rivet is running open as
-  tabs in that profile's existing window. Separate portable profiles can run
-  alongside an installed copy.
-- The installer adds an `Open with Rivet` Explorer context menu entry and
-  registers Rivet in the `Open with` dialog and
-  `Settings > Default apps` so it can be set as the default editor for
-  text-like file types; uninstalling removes the registration
-- The portable build supports the command line and single-instance behavior
-  but does not register context menu or default-app entries
-
-## Build From Source
-
-### Requirements
-
-- Windows 11 x64
-- Rust stable toolchain
-- Visual Studio C++ build tools and a Windows SDK for the native editor libraries
-- Inno Setup to build or test the installer
-
-### Commands
-
-```powershell
-cargo fmt --check
-cargo clippy --all-targets --locked -- -D warnings
-cargo test --locked
-cargo run
-```
-
-## Data and Configuration
-
-Rivet stores state under `%LOCALAPPDATA%\Rivet` (fallback `%APPDATA%\Rivet`):
-
-- `settings.json` for UI settings, spellcheck, and update preferences
-- `sessions\session.json` for remembered documents/session state
-- `backup\*.bak` for snapshot files
-- `updates\` for verified downloads and updater diagnostics
-
-### Self-contained portable profiles
-
-To keep an extracted copy's settings and recovery data beside the executable,
-close that copy and create an empty file named **`rivet-portable`** (no extension)
-beside `rivet.exe`. On its next launch, Rivet uses the adjacent `data` directory,
-including `data\logs`. Without this marker, existing AppData behavior continues.
-An inaccessible portable directory reports an error instead of switching profiles.
-
-The marker selects a separate profile; it does not move existing notes. To carry
-an existing profile over, close all Rivet windows, copy the contents of
-`%LOCALAPPDATA%\Rivet` into the new copy's `data` directory, then create the marker.
-Keep the original copy until you have verified the result, and do not overwrite
-another existing portable profile. Separately saved documents still live at their
-original paths and must be copied separately if moving to another computer.
-
-Portable profiles use manual executable updates. Keep the `rivet-portable` file
-and `data` directory when replacing the executable. Changing the marker takes
-effect after that copy is closed and relaunched.
-
-## Project Quality
-
-- CI enforces formatting, linting, tests, and dependency audits
-- Unit tests cover core session, settings, text transform, and command behavior
-- Build metadata is embedded into `Help -> About Rivet`
-- Native data-safety regressions run in CI using hidden windows and an isolated
-  profile. The legacy uninstall test confirms that notes survive uninstall.
-- Native editing regressions check font and line-number behavior, date insertion,
-  save history, deleted-file handling, layout, and dialog backgrounds. CI also
-  exercises the actual accelerator table in optimized builds.
-- Find in Files displays up to 10,000 matches, skips physical lines over 1 MiB,
-  and avoids directory junctions and symbolic links. Narrow the search if a limit
-  is reported. Its text decoding currently targets UTF-8 files.
-- The [September safety review](docs/SAFETY-REVIEW-2026-09-25.md) records fixes,
-  test evidence, and remaining manual checks for version 0.4.25.
-- Desktop and updater integration tests can be run with
-  `cargo test -- --ignored --test-threads=1`. They require an installed Windows
-  spelling provider and internet access, and use a hidden editor with temporary
-  user data. Build `cargo build --release --bin rivet` first for the helper test.
-  Installer smoke tests also require Inno Setup; run
-  `scripts/test-updater-installer.ps1` with `INNO_SETUP_ISCC` set. Add
-  `-Scope Machine` from an already elevated test session to check system-wide
-  installation. Both scopes must pass before a release is published; interactive
-  Windows approval also needs the [manual QA checks](docs/QA-CHECKLIST.md).
-
-## Contributing
-
-See `CONTRIBUTING.md` for contribution rules and workflow.
+CI checks formatting, linting, tests, and dependency advisories. Release builds
+also test per-user and system-wide installers. Automated coverage includes
+saving and recovery, editor preferences, dialog behavior, and update verification;
+visual and interactive behavior is covered by a separate manual QA checklist.
 
 ## License
 
-MIT. See `LICENSE`.
-
-Third-party notices: `NOTICE.txt` plus `THIRD_PARTY_NOTICES/NOTICE.txt`,
-`THIRD_PARTY_NOTICES/Scintilla.txt`, and `THIRD_PARTY_NOTICES/Lexilla.txt`.
+[MIT](LICENSE). Third-party attribution is in [NOTICE.txt](NOTICE.txt) and
+[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).
