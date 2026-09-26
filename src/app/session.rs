@@ -11,7 +11,8 @@ use crate::storage::atomic_write::{
 };
 
 #[cfg(test)]
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
+use std::sync::OnceLock;
 
 pub const DEFAULT_REMEMBER_SESSION: bool = true;
 pub const DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP: bool = true;
@@ -21,6 +22,8 @@ pub const DEFAULT_LINE_NUMBERS_ENABLED: bool = true;
 pub const DEFAULT_ALWAYS_ON_TOP: bool = false;
 
 const APP_DIR_NAME: &str = "Rivet";
+const PORTABLE_DATA_DIR_NAME: &str = "data";
+pub const PORTABLE_MARKER_NAME: &str = "rivet-portable";
 const SESSIONS_DIR_NAME: &str = "sessions";
 const BACKUP_DIR_NAME: &str = "backup";
 const SESSION_FILE_NAME: &str = "session.json";
@@ -207,7 +210,70 @@ pub fn decide_restore_source(input: &RestoreDecisionInput) -> RestoreSource {
     }
 }
 
+#[derive(Clone)]
+struct DataLocation {
+    root: PathBuf,
+    portable: bool,
+}
+
+/// Opt in explicitly. Writability cannot distinguish a per-user installation
+/// from an extracted copy. Do not silently fall back to a different profile
+/// when an explicitly selected portable directory is inaccessible.
+pub(crate) fn portable_data_dir(executable: &Path) -> Result<Option<PathBuf>> {
+    let directory = executable
+        .parent()
+        .ok_or_else(|| AppError::new("Invalid executable path."))?;
+    match std::fs::metadata(directory.join(PORTABLE_MARKER_NAME)) {
+        Ok(metadata) if metadata.is_file() => Ok(Some(directory.join(PORTABLE_DATA_DIR_NAME))),
+        Ok(_) => Err(AppError::new("The rivet-portable marker must be a file.")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(AppError::new(format!(
+            "Cannot read portable mode marker: {error}"
+        ))),
+    }
+}
+
+fn detect_data_location() -> Result<DataLocation> {
+    let executable = std::env::current_exe().map_err(|error| AppError::new(error.to_string()))?;
+    if let Some(root) = portable_data_dir(&executable)? {
+        return Ok(DataLocation {
+            root,
+            portable: true,
+        });
+    }
+    Ok(DataLocation {
+        root: installed_data_dir()?,
+        portable: false,
+    })
+}
+
+fn data_location() -> Result<DataLocation> {
+    #[cfg(test)]
+    {
+        detect_data_location()
+    }
+    #[cfg(not(test))]
+    {
+        // Removing a marker during a session must not redirect later backups.
+        static LOCATION: OnceLock<std::result::Result<DataLocation, String>> = OnceLock::new();
+        LOCATION
+            .get_or_init(|| detect_data_location().map_err(|error| error.to_string()))
+            .as_ref()
+            .cloned()
+            .map_err(AppError::new)
+    }
+}
+
 pub fn data_dir() -> Result<PathBuf> {
+    Ok(data_location()?.root)
+}
+
+pub fn portable_profile_dir() -> Result<Option<PathBuf>> {
+    let location = data_location()?;
+    Ok(location.portable.then_some(location.root))
+}
+
+fn installed_data_dir() -> Result<PathBuf> {
     if let Ok(local) = std::env::var("LOCALAPPDATA")
         && !local.is_empty()
     {

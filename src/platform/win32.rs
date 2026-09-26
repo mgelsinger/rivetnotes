@@ -487,10 +487,17 @@ pub fn run() -> Result<()> {
     let start = Instant::now();
 
     let cli_paths = single_instance::cli_paths();
-    let instance_guard = single_instance::acquire();
-    if instance_guard.already_running && single_instance::forward_to_existing(&cli_paths) {
-        // Files (if any) were handed to the existing window; exit quietly.
-        return Ok(());
+    session::ensure_storage_dirs()?;
+    let portable_profile = session::portable_profile_dir()?;
+    let instance_guard = single_instance::acquire(portable_profile.as_deref())?;
+    if instance_guard.already_running {
+        if single_instance::forward_to_existing(&cli_paths, instance_guard.window_class()) {
+            return Ok(());
+        }
+        // A second writer must never race another instance's session/backup files.
+        return Err(AppError::new(
+            "Rivet is already running with this profile but is not responding. Try again when that window is ready.",
+        ));
     }
 
     let instance: HINSTANCE = unsafe { GetModuleHandleW(None) }
@@ -516,7 +523,7 @@ pub fn run() -> Result<()> {
         }
     }
 
-    let class_name = w!("rivet_main_window");
+    let class_name = instance_guard.window_class();
     let cursor = unsafe { LoadCursorW(None, IDC_ARROW) }
         .map_err(|err| AppError::new(format!("LoadCursorW: {err}")))?;
     let (icon, icon_sm) = load_main_icons(instance);

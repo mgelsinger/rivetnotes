@@ -44,6 +44,14 @@ pub struct Installation {
 }
 
 pub fn detect_installation(executable: &Path) -> Option<Installation> {
+    // Explicit portable profiles never run an installer, even when a matching
+    // registration happens to exist for this executable directory.
+    if crate::app::session::portable_data_dir(executable)
+        .ok()?
+        .is_some()
+    {
+        return None;
+    }
     if !executable
         .file_name()?
         .to_str()?
