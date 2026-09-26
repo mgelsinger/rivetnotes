@@ -242,7 +242,7 @@ fn editing_undo_redo_lexers_and_invalid_ipc() -> Result<()> {
         for dark in [false, true] {
             let original = "# Title\r\nhello café\0tail\r\n{} <tag> /* comment */";
             scintilla::set_text(editor, original)?;
-            scintilla::apply_lexer(editor, lexer, dark);
+            scintilla::apply_lexer(editor, lexer, dark, "Consolas", 11);
             scintilla::set_wrap_enabled(editor, true);
             scintilla::set_target_range(editor, 0, 7);
             scintilla::replace_target(editor, "new");
