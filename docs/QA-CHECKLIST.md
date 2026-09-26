@@ -52,6 +52,14 @@ signing.
 
 ## Editing essentials
 
+- [ ] `View > Font...` previews the current family and size. Cancel leaves the
+  editor unchanged; accepting updates all tabs and persists after restart.
+- [ ] `View > Line Numbers` persists through theme/language changes, new tabs,
+  and restart. Folding controls remain usable when line numbers are hidden.
+- [ ] F5 replaces the current selection with local date/time and is undoable.
+- [ ] Save As prefills the tab name. New language-selected documents receive
+  the expected extension; Auto preserves existing alternate extensions.
+
 - [ ] `Ctrl+S` saves (regression guard for v0.4.4 — a stray glyph used to
   be inserted instead).
 - [ ] `Ctrl+Tab` and `Ctrl+Shift+Tab` cycle through tabs with wrap-around.
@@ -164,6 +172,18 @@ signing.
   clear error explains recovery. Temporarily unreadable entries remain indexed.
 - [ ] Find in Files reports invalid regexes and search limits; cancelling or
   restarting a broad search keeps the UI responsive.
+
+## Portable profiles and display changes
+
+- [ ] An extracted copy without `rivet-portable` retains AppData behavior. A copy
+  with the marker keeps settings, backups, sessions, and logs under adjacent data.
+- [ ] Two different portable profiles can run alongside an installed copy.
+  Opening another file with the same copy routes it to its existing window.
+- [ ] An inaccessible portable data directory reports an error without falling
+  back to AppData. Replacing the executable preserves the marker and data.
+- [ ] Minimize/restore and temporary narrow resizing retain the chosen tab width.
+- [ ] Move the editor across monitors with different DPI settings. Check suggested
+  bounds, editor margins, native menus, and dialogs in both themes.
 
 ## Tip
 

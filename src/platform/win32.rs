@@ -1,4 +1,6 @@
+use std::ffi::OsStr;
 use std::io::BufRead;
+use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,17 +12,20 @@ use windows::Win32::Foundation::{
     POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreatePen, CreateSolidBrush, DT_CENTER, DT_END_ELLIPSIS, DT_HIDEPREFIX,
-    DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawTextW, EndPaint, FillRect, HBRUSH,
-    HDC, HGDIOBJ, InvalidateRect, LineTo, MONITOR_DEFAULTTONULL, MonitorFromRect, MoveToEx,
-    PAINTSTRUCT, PS_SOLID, ScreenToClient, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
+    BeginPaint, COLOR_BTNFACE, CreatePen, CreateSolidBrush, DT_CENTER, DT_END_ELLIPSIS,
+    DT_HIDEPREFIX, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawTextW, EndPaint,
+    FillRect, GetSysColorBrush, HBRUSH, HDC, HGDIOBJ, InvalidateRect, LOGFONTW, LineTo,
+    MONITOR_DEFAULTTONULL, MonitorFromRect, MoveToEx, PAINTSTRUCT, PS_SOLID, ScreenToClient,
+    SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::UI::Controls::Dialogs::{
-    CommDlgExtendedError, GetOpenFileNameW, GetSaveFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST,
-    OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    CF_FORCEFONTEXIST, CF_INITTOLOGFONTSTRUCT, CF_LIMITSIZE, CF_NOSTYLESEL, CF_SCREENFONTS,
+    CHOOSEFONTW, ChooseFontW, CommDlgExtendedError, GetOpenFileNameW, GetSaveFileNameW,
+    OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
 use windows::Win32::UI::Controls::{
     CDDS_ITEMPOSTPAINT, CDDS_ITEMPREPAINT, CDDS_PREPAINT, CDRF_DODEFAULT, CDRF_NEWFONT,
@@ -71,10 +76,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TPM_RIGHTBUTTON, TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE,
     WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS, WM_ACTIVATEAPP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE,
     WM_COMMAND, WM_CONTEXTMENU, WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORDLG,
-    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DROPFILES,
-    WM_ENDSESSION, WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP, WM_KEYDOWN,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT,
-    WM_QUERYENDSESSION, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW,
+    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED,
+    WM_DROPFILES, WM_ENDSESSION, WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP,
+    WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY,
+    WM_PAINT, WM_QUERYENDSESSION, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW,
     WPF_RESTORETOMAXIMIZED, WS_BORDER, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW,
     WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
@@ -132,6 +137,7 @@ const IDM_EDIT_REPLACE: u16 = 323;
 const IDM_EDIT_REPLACE_ALL: u16 = 324;
 const IDM_EDIT_FIND_IN_FILES: u16 = 325;
 const IDM_EDIT_GOTO_LINE: u16 = 332;
+const IDM_EDIT_INSERT_DATETIME: u16 = 333;
 const CMD_TRANSFORM_UPPERCASE: u16 = 326;
 const CMD_TRANSFORM_LOWERCASE: u16 = 327;
 const CMD_COPY_FULL_PATH: u16 = 328;
@@ -152,6 +158,8 @@ const IDM_VIEW_ZOOM_IN: u16 = 354;
 const IDM_VIEW_ZOOM_OUT: u16 = 355;
 const IDM_VIEW_ZOOM_RESET: u16 = 356;
 const IDM_VIEW_SPELLCHECK: u16 = 357;
+const IDM_VIEW_LINE_NUMBERS: u16 = 358;
+const IDM_VIEW_FONT: u16 = 359;
 // Language (syntax) override commands. CMD_LANG_AUTO clears the per-tab override
 // and falls back to extension detection; the rest force a specific lexer.
 const CMD_LANG_AUTO: u16 = 360;
@@ -220,6 +228,7 @@ const VK_X: u16 = 0x58;
 const VK_Y: u16 = 0x59;
 const VK_Z: u16 = 0x5A;
 const VK_F3: u16 = 0x72;
+const VK_F5: u16 = 0x74;
 const VK_N: u16 = 0x4E;
 const VK_S: u16 = 0x53;
 const VK_OEM_4: u16 = 0xDB;
@@ -449,6 +458,8 @@ struct AppState {
     docs: Vec<DocTab>,
     active: usize,
     editor_dark: bool,
+    editor_font_name: String,
+    editor_font_size: i32,
     next_tab_runtime_id: i64,
     always_on_top: bool,
     window_placement: Option<session::WindowPlacementData>,
@@ -462,6 +473,7 @@ struct AppState {
     session_snapshot_periodic_backup: bool,
     backup_interval_seconds: u32,
     word_wrap_enabled: bool,
+    line_numbers_enabled: bool,
     next_untitled_index: usize,
     search_state: SearchState,
     search_dialog_mode: SearchDialogMode,
@@ -475,10 +487,17 @@ pub fn run() -> Result<()> {
     let start = Instant::now();
 
     let cli_paths = single_instance::cli_paths();
-    let instance_guard = single_instance::acquire();
-    if instance_guard.already_running && single_instance::forward_to_existing(&cli_paths) {
-        // Files (if any) were handed to the existing window; exit quietly.
-        return Ok(());
+    session::ensure_storage_dirs()?;
+    let portable_profile = session::portable_profile_dir()?;
+    let instance_guard = single_instance::acquire(portable_profile.as_deref())?;
+    if instance_guard.already_running {
+        if single_instance::forward_to_existing(&cli_paths, instance_guard.window_class()) {
+            return Ok(());
+        }
+        // A second writer must never race another instance's session/backup files.
+        return Err(AppError::new(
+            "Rivet is already running with this profile but is not responding. Try again when that window is ready.",
+        ));
     }
 
     let instance: HINSTANCE = unsafe { GetModuleHandleW(None) }
@@ -504,7 +523,7 @@ pub fn run() -> Result<()> {
         }
     }
 
-    let class_name = w!("rivet_main_window");
+    let class_name = instance_guard.window_class();
     let cursor = unsafe { LoadCursorW(None, IDC_ARROW) }
         .map_err(|err| AppError::new(format!("LoadCursorW: {err}")))?;
     let (icon, icon_sm) = load_main_icons(instance);
@@ -868,6 +887,13 @@ fn create_menu() -> Result<HMENU> {
             CMD_TRIM_LEADING_TRAILING as usize,
             w!("Trim Leading + Trailing Whitespace"),
         )?;
+        AppendMenuW(edit_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        AppendMenuW(
+            edit_menu,
+            MF_STRING,
+            IDM_EDIT_INSERT_DATETIME as usize,
+            w!("Insert Date/Time"),
+        )?;
         AppendMenuW(menu, MF_POPUP, edit_menu.0 as usize, w!("Edit"))?;
 
         let view_menu = CreatePopupMenu()?;
@@ -907,6 +933,12 @@ fn create_menu() -> Result<HMENU> {
         AppendMenuW(
             view_menu,
             MF_STRING,
+            IDM_VIEW_LINE_NUMBERS as usize,
+            w!("Line Numbers"),
+        )?;
+        AppendMenuW(
+            view_menu,
+            MF_STRING,
             IDM_VIEW_EDITOR_DARK as usize,
             w!("Dark Mode"),
         )?;
@@ -916,6 +948,8 @@ fn create_menu() -> Result<HMENU> {
             CMD_VIEW_ALWAYS_ON_TOP as usize,
             w!("Always On Top"),
         )?;
+        AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+        AppendMenuW(view_menu, MF_STRING, IDM_VIEW_FONT as usize, w!("Font..."))?;
         AppendMenuW(view_menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         AppendMenuW(
             view_menu,
@@ -1169,6 +1203,11 @@ fn create_accelerators() -> Result<HACCEL> {
             fVirt: FVIRTKEY | FCONTROL,
             key: VK_G,
             cmd: IDM_EDIT_GOTO_LINE,
+        },
+        ACCEL {
+            fVirt: FVIRTKEY,
+            key: VK_F5,
+            cmd: IDM_EDIT_INSERT_DATETIME,
         },
         ACCEL {
             fVirt: FVIRTKEY | FCONTROL,
@@ -1484,8 +1523,43 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         WM_SIZE => {
-            if let Some(state) = get_state(hwnd) {
+            if let Some(state) = get_state(hwnd)
+                && !unsafe { IsIconic(hwnd) }.as_bool()
+            {
                 layout_children(hwnd, state);
+            }
+            LRESULT(0)
+        }
+        WM_DPICHANGED if lparam.0 != 0 => {
+            // Adapt the main-window part of PR #25 without its custom toolbar.
+            // SetWindowPos can reenter wndproc, so acquire AppState afterward.
+            let suggested = unsafe { *(lparam.0 as *const RECT) };
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    HWND(0),
+                    suggested.left,
+                    suggested.top,
+                    suggested.right - suggested.left,
+                    suggested.bottom - suggested.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+            if let Ok(instance) = module_instance() {
+                set_window_icons(hwnd, instance);
+            }
+            if let Some(state) = get_state(hwnd) {
+                for doc in &state.docs {
+                    apply_editor_theme_overlays(
+                        doc.editor,
+                        state.editor_dark,
+                        state.line_numbers_enabled,
+                    );
+                }
+                layout_children(hwnd, state);
+                unsafe {
+                    InvalidateRect(hwnd, None, true);
+                }
             }
             LRESULT(0)
         }
@@ -1604,6 +1678,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                         && let Err(err) = show_find_in_files_dialog(hwnd, state)
                     {
                         show_error("Rivet error", &err.to_string());
+                    }
+                    LRESULT(0)
+                }
+                IDM_EDIT_INSERT_DATETIME => {
+                    if let Some(state) = get_state(hwnd)
+                        && let Some(editor) = active_editor(state)
+                    {
+                        scintilla::replace_selection(editor, &current_date_time_stamp());
                     }
                     LRESULT(0)
                 }
@@ -1830,6 +1912,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                     LRESULT(0)
                 }
+                IDM_VIEW_LINE_NUMBERS => {
+                    if let Some(state) = get_state(hwnd) {
+                        toggle_line_numbers(hwnd, state);
+                    }
+                    LRESULT(0)
+                }
                 IDM_VIEW_ZOOM_IN => {
                     if let Some(state) = get_state(hwnd) {
                         adjust_zoom(state, 1);
@@ -1876,6 +1964,24 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     if let Some(state) = get_state(hwnd) {
                         let enabled = !state.always_on_top;
                         set_always_on_top(hwnd, state, enabled);
+                    }
+                    LRESULT(0)
+                }
+                IDM_VIEW_FONT => {
+                    // The modal dialog pumps messages. Do not hold AppState
+                    // across that nested message loop.
+                    let current = get_state(hwnd)
+                        .map(|state| (state.editor_font_name.clone(), state.editor_font_size));
+                    if let Some((name, size)) = current {
+                        match show_font_dialog(hwnd, &name, size) {
+                            Ok(Some((name, size))) => {
+                                if let Some(state) = get_state(hwnd) {
+                                    set_editor_font(state, name, size);
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(err) => show_error("Rivet error", &err.to_string()),
+                        }
                     }
                     LRESULT(0)
                 }
@@ -2197,7 +2303,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                                 scintilla::get_current_pos(doc_tab.editor) as i64;
                         }
                         let line_count = scintilla::line_count(nmhdr.hwndFrom);
-                        scintilla::set_line_number_margin_width(nmhdr.hwndFrom, line_count);
+                        scintilla::apply_line_number_margin(
+                            nmhdr.hwndFrom,
+                            state.line_numbers_enabled,
+                            line_count,
+                        );
                         if let Some(index) = doc_index_by_hwnd(state, nmhdr.hwndFrom)
                             && index == state.active
                         {
@@ -2558,6 +2668,8 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
 
     // Captured before the struct literal moves `ui_settings` into the state.
     let editor_dark = ui_settings.editor_dark;
+    let editor_font_name = ui_settings.editor_font_name.clone();
+    let editor_font_size = ui_settings.editor_font_size;
     let state = AppState {
         updates: UpdateController::new(ui_settings.automatic_updates),
         close_checkpoint_saved: false,
@@ -2587,6 +2699,8 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         docs: Vec::new(),
         active: 0,
         editor_dark,
+        editor_font_name,
+        editor_font_size,
         next_tab_runtime_id: 1,
         always_on_top: session::DEFAULT_ALWAYS_ON_TOP,
         window_placement: None,
@@ -2600,6 +2714,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
         session_snapshot_periodic_backup: session::DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP,
         backup_interval_seconds: session::DEFAULT_BACKUP_INTERVAL_SECONDS,
         word_wrap_enabled: session::DEFAULT_WORD_WRAP_ENABLED,
+        line_numbers_enabled: session::DEFAULT_LINE_NUMBERS_ENABLED,
         next_untitled_index: 1,
         search_state: SearchState {
             find_text: String::new(),
@@ -2643,6 +2758,7 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     update_status(&state);
     update_tab_layout_menu(hwnd, state.tab_host.placement);
     update_wrap_menu(hwnd, &state);
+    update_line_numbers_menu(hwnd, &state);
     update_editor_dark_menu(hwnd, state.editor_dark);
     update_always_on_top_menu(hwnd, &state);
     rebuild_recent_files_menu(hwnd, &state);
@@ -2686,9 +2802,9 @@ fn layout_children(hwnd: HWND, state: &mut AppState) {
     let list_width = match state.tab_host.placement {
         TabPlacement::Top => 0,
         TabPlacement::Left | TabPlacement::Right => {
-            let adjusted = clamp_vertical_tab_width(state, state.tab_host.vertical_width_px, width);
-            state.tab_host.vertical_width_px = adjusted;
-            adjusted
+            // Layout may temporarily be narrower than the user's preference.
+            // Only an explicit splitter drag should change the stored width.
+            clamp_vertical_tab_width(state, state.tab_host.vertical_width_px, width)
         }
     };
     let editor_height = (height - status_height - tab_height).max(0);
@@ -2838,7 +2954,13 @@ fn open_path_new_tab(
         scintilla::set_eol_mode(doc_tab.editor, eol);
     }
 
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(
+        &doc_tab,
+        state.editor_dark,
+        &state.editor_font_name,
+        state.editor_font_size,
+        state.line_numbers_enabled,
+    );
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     select_tab(hwnd, state, index);
     apply_large_file_mode_restrictions(hwnd, state, index);
@@ -2922,7 +3044,7 @@ fn save_document_at(
     encoding_override: Option<TextEncoding>,
     force_save_as: bool,
 ) -> Result<bool> {
-    let (encoding, existing_path) = {
+    let (encoding, existing_path, display_name, default_ext) = {
         let doc_tab = state
             .docs
             .get(index)
@@ -2930,10 +3052,12 @@ fn save_document_at(
         (
             encoding_override.unwrap_or(doc_tab.doc.encoding),
             doc_tab.doc.path.clone(),
+            doc_tab.doc.display_name.clone(),
+            default_save_extension(doc_tab.doc.path.as_deref(), doc_tab.lexer_override),
         )
     };
     let path = if force_save_as || existing_path.is_none() {
-        match save_file_dialog(hwnd)? {
+        match save_file_dialog(hwnd, &display_name, &default_ext)? {
             Some(path) => path,
             None => return Ok(false),
         }
@@ -2994,7 +3118,13 @@ fn save_document_at(
                 state.ui_settings.large_file_disable_word_wrap,
             ),
         );
-        apply_syntax_for_doc(doc_tab, state.editor_dark);
+        apply_syntax_for_doc(
+            doc_tab,
+            state.editor_dark,
+            &state.editor_font_name,
+            state.editor_font_size,
+            state.line_numbers_enabled,
+        );
         scintilla::set_savepoint(doc_tab.editor);
         doc_tab.sticky_dirty = false;
         doc_tab.doc.is_dirty = false;
@@ -3013,6 +3143,7 @@ fn save_document_at(
     update_tab_text(state, index);
     update_title(hwnd, state);
     update_status(state);
+    note_recent_file(hwnd, state, &path);
     if let Err(err) = save_session_checkpoint(hwnd, state) {
         logging::log_error(&format!("session_save_after_manual_save_failed err={err}"));
     }
@@ -3066,7 +3197,13 @@ fn reload_doc_from_path(
             state.ui_settings.large_file_threshold_mb,
             state.ui_settings.large_file_disable_word_wrap,
         )?;
-        apply_syntax_for_doc(doc_tab, state.editor_dark);
+        apply_syntax_for_doc(
+            doc_tab,
+            state.editor_dark,
+            &state.editor_font_name,
+            state.editor_font_size,
+            state.line_numbers_enabled,
+        );
         scintilla::goto_pos(
             doc_tab.editor,
             caret.min(scintilla::get_length(doc_tab.editor)),
@@ -3175,6 +3312,13 @@ fn update_status(state: &AppState) {
         }
         if doc_tab.doc.is_dirty {
             flags.push('*');
+        }
+        {
+            let ext = default_save_extension(doc_tab.doc.path.as_deref(), doc_tab.lexer_override);
+            if !flags.is_empty() {
+                flags.push(' ');
+            }
+            flags.push_str(&ext);
         }
         if doc_tab.doc.large_file_mode {
             if !flags.is_empty() {
@@ -3417,6 +3561,15 @@ fn show_find_dialog(hwnd: HWND, state: &mut AppState, mode: SearchDialogMode) ->
     state.search_dialog_mode = mode;
     seed_search_text_from_selection(state);
     if let Some(dialog) = &state.find_dialog {
+        apply_dialog_dark_mode(
+            dialog.hwnd,
+            &[
+                dialog.match_case,
+                dialog.whole_word,
+                dialog.regex,
+                dialog.wrap,
+            ],
+        );
         unsafe {
             ShowWindow(dialog.hwnd, SW_SHOW);
             let _ = SetFocus(dialog.find_edit);
@@ -3426,7 +3579,7 @@ fn show_find_dialog(hwnd: HWND, state: &mut AppState, mode: SearchDialogMode) ->
     }
 
     let instance = module_instance()?;
-    let width = scale_for_dpi(hwnd, 460);
+    let width = scale_for_dpi(hwnd, 520);
     let height = scale_for_dpi(hwnd, 240);
     let hwnd_dialog = unsafe {
         CreateWindowExW(
@@ -3483,6 +3636,7 @@ fn show_go_to_line_dialog(hwnd: HWND, state: &mut AppState) -> Result<()> {
         return Ok(());
     }
     if let Some(dialog) = &state.go_to_line_dialog {
+        apply_dialog_dark_mode(dialog.hwnd, &[]);
         unsafe {
             ShowWindow(dialog.hwnd, SW_SHOW);
             let _ = SetFocus(dialog.line_edit);
@@ -3575,6 +3729,15 @@ fn close_go_to_line_dialog(main_hwnd: HWND, state: &mut AppState) {
 
 fn show_find_in_files_dialog(hwnd: HWND, state: &mut AppState) -> Result<()> {
     if let Some(dialog) = &state.find_in_files {
+        apply_dialog_dark_mode(
+            dialog.hwnd,
+            &[
+                dialog.match_case,
+                dialog.whole_word,
+                dialog.regex,
+                dialog.recurse,
+            ],
+        );
         unsafe {
             ShowWindow(dialog.hwnd, SW_SHOW);
         }
@@ -4355,6 +4518,15 @@ fn count_words(text: &str) -> usize {
     count
 }
 
+/// Current local date/time as "YYYY-MM-DD HH:MM", for Insert Date/Time.
+fn current_date_time_stamp() -> String {
+    let st = unsafe { GetLocalTime() };
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute
+    )
+}
+
 /// Formats a count with comma separators, e.g. 1234567 -> "1,234,567".
 fn format_thousands(value: usize) -> String {
     let digits = value.to_string();
@@ -4541,10 +4713,16 @@ fn effective_lexer(doc_tab: &DocTab) -> scintilla::LexerKind {
         .unwrap_or_else(|| lexer_for_doc(&doc_tab.doc))
 }
 
-fn apply_syntax_for_doc(doc_tab: &DocTab, dark: bool) {
+fn apply_syntax_for_doc(
+    doc_tab: &DocTab,
+    dark: bool,
+    font_name: &str,
+    font_size: i32,
+    line_numbers_enabled: bool,
+) {
     let lexer = effective_lexer(doc_tab);
-    scintilla::apply_lexer(doc_tab.editor, lexer, dark);
-    apply_editor_theme_overlays(doc_tab.editor, dark);
+    scintilla::apply_lexer(doc_tab.editor, lexer, dark, font_name, font_size);
+    apply_editor_theme_overlays(doc_tab.editor, dark, line_numbers_enabled);
     if matches!(lexer, scintilla::LexerKind::Markdown) && !doc_tab.doc.large_file_mode {
         apply_markdown_fold_levels(doc_tab.editor);
     }
@@ -4555,6 +4733,9 @@ fn apply_syntax_for_doc(doc_tab: &DocTab, dark: bool) {
 fn set_language_override(state: &mut AppState, over: Option<scintilla::LexerKind>) {
     let index = state.active;
     let dark = state.editor_dark;
+    let font_name = state.editor_font_name.clone();
+    let font_size = state.editor_font_size;
+    let line_numbers_enabled = state.line_numbers_enabled;
     let Some(doc_tab) = state.docs.get_mut(index) else {
         return;
     };
@@ -4562,7 +4743,8 @@ fn set_language_override(state: &mut AppState, over: Option<scintilla::LexerKind
         return;
     }
     doc_tab.lexer_override = over;
-    apply_syntax_for_doc(doc_tab, dark);
+    apply_syntax_for_doc(doc_tab, dark, &font_name, font_size, line_numbers_enabled);
+    update_status(state);
 }
 
 /// Maps a Language-menu command id to the override it selects: `Some(None)` for
@@ -4839,6 +5021,10 @@ mod spellcheck_tests;
 #[path = "safety_tests.rs"]
 mod safety_tests;
 
+#[cfg(test)]
+#[path = "pr_integration_tests.rs"]
+mod pr_integration_tests;
+
 /// Debounce a markdown fold recompute. Recomputing on every keystroke walks
 /// the whole document, so we coalesce edits behind a short timer and only act
 /// on the active doc once typing settles.
@@ -4895,7 +5081,7 @@ fn apply_markdown_fold_levels(editor: HWND) {
     }
 }
 
-fn apply_editor_theme_overlays(editor: HWND, dark: bool) {
+fn apply_editor_theme_overlays(editor: HWND, dark: bool, line_numbers_enabled: bool) {
     let (smart_color, fill_alpha, outline_alpha) = if dark {
         (color_ref(90, 140, 220).0, 52usize, 80usize)
     } else {
@@ -4947,7 +5133,7 @@ fn apply_editor_theme_overlays(editor: HWND, dark: bool) {
     scintilla::set_line_number_style(editor, gutter_fg, gutter_bg);
     scintilla::set_fold_marker_colors(editor, marker_fg, marker_bg);
     let line_count = scintilla::line_count(editor);
-    scintilla::set_line_number_margin_width(editor, line_count);
+    scintilla::apply_line_number_margin(editor, line_numbers_enabled, line_count);
     let fold_width = scale_for_dpi(editor, 16);
     scintilla::set_fold_margin_width(editor, fold_width);
 }
@@ -4981,6 +5167,39 @@ fn lexer_for_doc(doc: &Document) -> scintilla::LexerKind {
         Some("md") | Some("markdown") => scintilla::LexerKind::Markdown,
         _ => scintilla::LexerKind::Null,
     }
+}
+
+/// Canonical file extension (with leading dot) for a selected language, for
+/// display and for prefilling the Save dialog. `None` for `Null` (no
+/// language selected / plain text).
+fn extension_for_lexer(kind: scintilla::LexerKind) -> Option<&'static str> {
+    match kind {
+        scintilla::LexerKind::Null => None,
+        scintilla::LexerKind::Cpp => Some(".cpp"),
+        scintilla::LexerKind::JavaScript => Some(".js"),
+        scintilla::LexerKind::Json => Some(".json"),
+        scintilla::LexerKind::Yaml => Some(".yaml"),
+        scintilla::LexerKind::PowerShell => Some(".ps1"),
+        scintilla::LexerKind::Python => Some(".py"),
+        scintilla::LexerKind::Html => Some(".html"),
+        scintilla::LexerKind::Xml => Some(".xml"),
+        scintilla::LexerKind::Css => Some(".css"),
+        scintilla::LexerKind::Properties => Some(".ini"),
+        scintilla::LexerKind::Markdown => Some(".md"),
+    }
+}
+
+fn default_save_extension(path: Option<&Path>, language: Option<scintilla::LexerKind>) -> String {
+    if let Some(language) = language {
+        return extension_for_lexer(language).unwrap_or(".txt").to_string();
+    }
+    // Auto preserves the real extension, including alternate and unknown ones.
+    // Large File Mode disables lexing but should not change the save extension.
+    path.and_then(Path::extension)
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty())
+        .map(|ext| format!(".{ext}"))
+        .unwrap_or_else(|| ".txt".to_string())
 }
 
 fn create_doc_from_path(
@@ -5087,7 +5306,13 @@ fn create_empty_tab(hwnd: HWND, instance: HINSTANCE, state: &mut AppState) -> Re
     scintilla::set_eol_mode(editor, doc_tab.doc.eol);
     scintilla::set_wrap_enabled(editor, state.word_wrap_enabled);
     scintilla::set_savepoint(editor);
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(
+        &doc_tab,
+        state.editor_dark,
+        &state.editor_font_name,
+        state.editor_font_size,
+        state.line_numbers_enabled,
+    );
 
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     select_tab(hwnd, state, index);
@@ -5145,7 +5370,13 @@ fn duplicate_active_tab(hwnd: HWND, state: &mut AppState) -> Result<()> {
         smart_highlight_truncated: false,
         lexer_override: None,
     };
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(
+        &doc_tab,
+        state.editor_dark,
+        &state.editor_font_name,
+        state.editor_font_size,
+        state.line_numbers_enabled,
+    );
     restore_strike_ranges(doc_tab.editor, &strike_ranges);
 
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
@@ -6072,6 +6303,7 @@ fn restore_session(hwnd: HWND, mut state: AppState) -> Result<AppState> {
     state.session_snapshot_periodic_backup = snapshot.session_snapshot_periodic_backup;
     state.backup_interval_seconds = snapshot.backup_interval_seconds.max(1);
     state.word_wrap_enabled = snapshot.word_wrap_enabled;
+    state.line_numbers_enabled = snapshot.line_numbers_enabled;
     state.always_on_top = snapshot.always_on_top;
     state.window_placement = snapshot.window_placement;
 
@@ -6256,7 +6488,13 @@ fn restore_session_entry(
     if doc_tab.doc.path.is_none() {
         update_next_untitled_index_from_name(state, &doc_tab.doc.display_name);
     }
-    apply_syntax_for_doc(&doc_tab, state.editor_dark);
+    apply_syntax_for_doc(
+        &doc_tab,
+        state.editor_dark,
+        &state.editor_font_name,
+        state.editor_font_size,
+        state.line_numbers_enabled,
+    );
     restore_strike_ranges(editor, &entry.strike_ranges);
     let index = add_tab(state, &tab_title(&doc_tab), doc_tab)?;
     if entry.cursor_pos >= 0 {
@@ -6302,6 +6540,7 @@ fn save_session_checkpoint_with_discard(
         data.session_snapshot_periodic_backup = false;
         data.backup_interval_seconds = state.backup_interval_seconds.max(1);
         data.word_wrap_enabled = state.word_wrap_enabled;
+        data.line_numbers_enabled = state.line_numbers_enabled;
         data.always_on_top = state.always_on_top;
         data.window_placement = capture_window_placement(hwnd);
         data.active_tab_id = None;
@@ -6344,6 +6583,7 @@ fn save_session_checkpoint_with_discard(
     data.session_snapshot_periodic_backup = state.session_snapshot_periodic_backup;
     data.backup_interval_seconds = state.backup_interval_seconds.max(1);
     data.word_wrap_enabled = state.word_wrap_enabled;
+    data.line_numbers_enabled = state.line_numbers_enabled;
     data.always_on_top = state.always_on_top;
     data.window_placement = capture_window_placement(hwnd);
     data.active_tab_id = state.docs.get(state.active).map(|doc| doc.doc.id);
@@ -6574,6 +6814,51 @@ fn eol_mode_label(mode: i32) -> &'static str {
     }
 }
 
+/// Shows the native font picker, pre-selected to `current_name`/`current_size`.
+/// Returns `None` if the user cancels.
+fn show_font_dialog(
+    hwnd: HWND,
+    current_name: &str,
+    current_size: i32,
+) -> Result<Option<(String, i32)>> {
+    let mut log_font = LOGFONTW::default();
+    let wide_name: Vec<u16> = current_name
+        .encode_utf16()
+        .take(log_font.lfFaceName.len() - 1)
+        .collect();
+    log_font.lfFaceName[..wide_name.len()].copy_from_slice(&wide_name);
+
+    let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96) as i32;
+    log_font.lfHeight = -((current_size * dpi + 36) / 72);
+
+    let mut choose_font = CHOOSEFONTW {
+        lStructSize: std::mem::size_of::<CHOOSEFONTW>() as u32,
+        hwndOwner: hwnd,
+        lpLogFont: &mut log_font,
+        Flags: CF_SCREENFONTS
+            | CF_INITTOLOGFONTSTRUCT
+            | CF_FORCEFONTEXIST
+            | CF_NOSTYLESEL
+            | CF_LIMITSIZE,
+        nSizeMin: settings::MIN_EDITOR_FONT_SIZE,
+        nSizeMax: settings::MAX_EDITOR_FONT_SIZE,
+        ..Default::default()
+    };
+
+    let result = unsafe { ChooseFontW(&mut choose_font) };
+    if !result.as_bool() {
+        let error = unsafe { CommDlgExtendedError() };
+        if error.0 != 0 {
+            return Err(AppError::new(format!("Font selection failed: {}", error.0)));
+        }
+        return Ok(None);
+    }
+
+    let name = wide_to_string(&log_font.lfFaceName)?;
+    let size = (choose_font.iPointSize / 10).max(1);
+    Ok(Some((name, size)))
+}
+
 fn open_file_dialog(hwnd: HWND) -> Result<Option<PathBuf>> {
     let mut buffer = vec![0u16; 1024];
     let filter = w!("All Files\0*.*\0\0");
@@ -6605,9 +6890,19 @@ fn open_file_dialog(hwnd: HWND) -> Result<Option<PathBuf>> {
     )))
 }
 
-fn save_file_dialog(hwnd: HWND) -> Result<Option<PathBuf>> {
+fn save_file_dialog(hwnd: HWND, default_name: &str, default_ext: &str) -> Result<Option<PathBuf>> {
     let mut buffer = vec![0u16; 1024];
+    let default_wide: Vec<u16> = OsStr::new(default_name)
+        .encode_wide()
+        .filter(|&unit| unit != 0)
+        .collect();
+    let copy_len = default_wide.len().min(buffer.len() - 1);
+    buffer[..copy_len].copy_from_slice(&default_wide[..copy_len]);
     let filter = w!("All Files\0*.*\0\0");
+    let def_ext_wide: Vec<u16> = OsStr::new(default_ext.trim_start_matches('.'))
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
 
     let mut ofn = OPENFILENAMEW {
         lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
@@ -6615,6 +6910,7 @@ fn save_file_dialog(hwnd: HWND) -> Result<Option<PathBuf>> {
         lpstrFile: PWSTR(buffer.as_mut_ptr()),
         nMaxFile: buffer.len() as u32,
         lpstrFilter: PCWSTR(filter.as_ptr()),
+        lpstrDefExt: PCWSTR(def_ext_wide.as_ptr()),
         Flags: OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT,
         ..Default::default()
     };
@@ -6734,13 +7030,48 @@ fn dialog_ctl_color(dlg_hwnd: HWND, hdc: HDC, edit_like: bool) -> Option<LRESULT
     Some(LRESULT(brush.0))
 }
 
+/// Handles `WM_ERASEBKGND` for a dialog window. These dialogs are plain
+/// `CreateWindowExW` windows with a null class background brush (not real
+/// dialog-box windows), so nothing ever paints the client area outside of
+/// child controls. Paint explicitly in both light and dark mode.
+fn dialog_erase_background(dlg_hwnd: HWND, hdc: HDC) -> LRESULT {
+    let mut rect = windows::Win32::Foundation::RECT::default();
+    unsafe {
+        let _ = GetClientRect(dlg_hwnd, &mut rect);
+    }
+    // The window class's `hbrBackground` is null, so `DefWindowProc` is a
+    // no-op on `WM_ERASEBKGND` - it does NOT paint white, it leaves
+    // whatever was already there. We must always paint an explicit brush
+    // here (dark or light), never rely on falling through to the default.
+    let brush = match dialog_dark_theme(dlg_hwnd) {
+        Some(theme) => dark_mode::cached_solid_brush(theme.bg),
+        None => unsafe { GetSysColorBrush(COLOR_BTNFACE) },
+    };
+    unsafe {
+        let _ = FillRect(hdc, &rect, brush);
+    }
+    LRESULT(1)
+}
+
 /// Called from dialog `WM_CREATE` once all child controls exist. Applies the
 /// title-bar dark attribute and re-themes child controls so scrollbars and
 /// borders pick up the dark variant.
-fn apply_dialog_dark_mode(dlg_hwnd: HWND) {
+/// `checkboxes` are `BS_AUTOCHECKBOX` controls, which ignore `WM_CTLCOLORBTN`
+/// (and thus our dark text color) while visual styles are active - Windows
+/// theme-draws their label using the light-mode color regardless of what
+/// the app returns. Stripping their visual style makes them fall back to
+/// classic owner-color-respecting rendering, at the cost of the modern
+/// checkbox glyph.
+fn apply_dialog_dark_mode(dlg_hwnd: HWND, checkboxes: &[HWND]) {
     let dark = dialog_dark_theme(dlg_hwnd).is_some();
     dark_mode::apply_to_window(dlg_hwnd, dark);
     dark_mode::theme_child_controls(dlg_hwnd, dark);
+    for &checkbox in checkboxes {
+        dark_mode::set_checkbox_dark_mode(checkbox, dark);
+    }
+    unsafe {
+        let _ = InvalidateRect(dlg_hwnd, None, true);
+    }
 }
 
 fn loword(value: usize) -> u16 {
@@ -7187,6 +7518,8 @@ fn persist_ui_settings(state: &AppState) {
     settings.tab_placement = state.tab_host.placement;
     settings.vertical_tab_width_px = state.tab_host.vertical_width_px;
     settings.editor_dark = state.editor_dark;
+    settings.editor_font_name = state.editor_font_name.clone();
+    settings.editor_font_size = state.editor_font_size;
     if let Err(err) = settings::save_settings(&settings) {
         logging::log_error(&format!("settings_save_failed err={err}"));
     }
@@ -7496,7 +7829,13 @@ fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
     state.editor_dark = enabled;
     update_editor_dark_menu(hwnd, enabled);
     for doc_tab in &state.docs {
-        apply_syntax_for_doc(doc_tab, enabled);
+        apply_syntax_for_doc(
+            doc_tab,
+            enabled,
+            &state.editor_font_name,
+            state.editor_font_size,
+            state.line_numbers_enabled,
+        );
     }
     if let Err(err) = update_tab_host_theme(state, enabled) {
         logging::log_error(&format!("tab_host_theme_update_failed err={err}"));
@@ -7513,6 +7852,53 @@ fn set_editor_dark_mode(hwnd: HWND, state: &mut AppState, enabled: bool) {
             0,
             0,
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+    // Find/Replace, Goto Line, and Find in Files are cached windows (shown
+    // and hidden, not recreated), so they need to be re-themed here too -
+    // otherwise a dialog opened before this toggle stays on the old theme
+    // until it happens to be closed and reopened.
+    if let Some(dialog) = &state.find_dialog {
+        apply_dialog_dark_mode(
+            dialog.hwnd,
+            &[
+                dialog.match_case,
+                dialog.whole_word,
+                dialog.regex,
+                dialog.wrap,
+            ],
+        );
+    }
+    if let Some(dialog) = &state.go_to_line_dialog {
+        apply_dialog_dark_mode(dialog.hwnd, &[]);
+    }
+    if let Some(dialog) = &state.find_in_files {
+        apply_dialog_dark_mode(
+            dialog.hwnd,
+            &[
+                dialog.match_case,
+                dialog.whole_word,
+                dialog.regex,
+                dialog.recurse,
+            ],
+        );
+    }
+    persist_ui_settings(state);
+}
+
+fn set_editor_font(state: &mut AppState, name: String, size: i32) {
+    state.editor_font_name = name;
+    state.editor_font_size = size.clamp(
+        settings::MIN_EDITOR_FONT_SIZE,
+        settings::MAX_EDITOR_FONT_SIZE,
+    );
+    for doc_tab in &state.docs {
+        apply_syntax_for_doc(
+            doc_tab,
+            state.editor_dark,
+            &state.editor_font_name,
+            state.editor_font_size,
+            state.line_numbers_enabled,
         );
     }
     persist_ui_settings(state);
@@ -7591,6 +7977,25 @@ fn set_word_wrap(hwnd: HWND, state: &mut AppState, enabled: bool) {
     update_wrap_menu(hwnd, state);
     if let Err(err) = save_session_checkpoint(hwnd, state) {
         logging::log_error(&format!("session_save_after_wrap_toggle_failed err={err}"));
+    }
+}
+
+fn toggle_line_numbers(hwnd: HWND, state: &mut AppState) {
+    let enabled = !state.line_numbers_enabled;
+    set_line_numbers(hwnd, state, enabled);
+}
+
+fn set_line_numbers(hwnd: HWND, state: &mut AppState, enabled: bool) {
+    state.line_numbers_enabled = enabled;
+    for doc_tab in &state.docs {
+        let line_count = scintilla::line_count(doc_tab.editor);
+        scintilla::apply_line_number_margin(doc_tab.editor, enabled, line_count);
+    }
+    update_line_numbers_menu(hwnd, state);
+    if let Err(err) = save_session_checkpoint(hwnd, state) {
+        logging::log_error(&format!(
+            "session_save_after_line_numbers_toggle_failed err={err}"
+        ));
     }
 }
 
@@ -7736,6 +8141,14 @@ fn update_wrap_menu(hwnd: HWND, state: &AppState) {
         return;
     }
     set_menu_check(menu, IDM_VIEW_WORD_WRAP, state.word_wrap_enabled);
+}
+
+fn update_line_numbers_menu(hwnd: HWND, state: &AppState) {
+    let menu = unsafe { GetMenu(hwnd) };
+    if menu.0 == 0 {
+        return;
+    }
+    set_menu_check(menu, IDM_VIEW_LINE_NUMBERS, state.line_numbers_enabled);
 }
 
 fn update_file_menu(hwnd: HWND, state: &AppState) {
@@ -8106,7 +8519,7 @@ unsafe extern "system" fn find_wndproc(
                     w!("Button"),
                     w!("Find Next"),
                     button_style,
-                    scale(360),
+                    scale(420),
                     scale(10),
                     scale(90),
                     scale(22),
@@ -8120,7 +8533,7 @@ unsafe extern "system" fn find_wndproc(
                     w!("Button"),
                     w!("Find Prev"),
                     button_style,
-                    scale(360),
+                    scale(420),
                     scale(40),
                     scale(90),
                     scale(22),
@@ -8134,7 +8547,7 @@ unsafe extern "system" fn find_wndproc(
                     w!("Button"),
                     w!("Replace"),
                     button_style,
-                    scale(360),
+                    scale(420),
                     scale(70),
                     scale(90),
                     scale(22),
@@ -8148,7 +8561,7 @@ unsafe extern "system" fn find_wndproc(
                     w!("Button"),
                     w!("Replace All"),
                     button_style,
-                    scale(360),
+                    scale(420),
                     scale(100),
                     scale(90),
                     scale(22),
@@ -8176,7 +8589,7 @@ unsafe extern "system" fn find_wndproc(
                     w!("Button"),
                     w!("Close"),
                     button_style,
-                    scale(360),
+                    scale(420),
                     scale(130),
                     scale(90),
                     scale(22),
@@ -8230,9 +8643,10 @@ unsafe extern "system" fn find_wndproc(
                     let _ = SetFocus(find_edit);
                 }
             }
-            apply_dialog_dark_mode(hwnd);
+            apply_dialog_dark_mode(hwnd, &[match_case, whole_word, regex, wrap]);
             LRESULT(0)
         }
+        WM_ERASEBKGND => dialog_erase_background(hwnd, HDC(wparam.0 as isize)),
         WM_CTLCOLORDLG | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
             if let Some(r) = dialog_ctl_color(hwnd, HDC(wparam.0 as isize), false) {
                 return r;
@@ -8400,9 +8814,10 @@ unsafe extern "system" fn goto_line_wndproc(
                     let _ = SetFocus(line_edit);
                 }
             }
-            apply_dialog_dark_mode(hwnd);
+            apply_dialog_dark_mode(hwnd, &[]);
             LRESULT(0)
         }
+        WM_ERASEBKGND => dialog_erase_background(hwnd, HDC(wparam.0 as isize)),
         WM_CTLCOLORDLG | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
             if let Some(r) = dialog_ctl_color(hwnd, HDC(wparam.0 as isize), false) {
                 return r;
@@ -8806,9 +9221,10 @@ unsafe extern "system" fn find_in_files_wndproc(
                 });
             }
 
-            apply_dialog_dark_mode(hwnd);
+            apply_dialog_dark_mode(hwnd, &[match_case, whole_word, regex, recurse]);
             LRESULT(0)
         }
+        WM_ERASEBKGND => dialog_erase_background(hwnd, HDC(wparam.0 as isize)),
         WM_CTLCOLORDLG | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
             if let Some(r) = dialog_ctl_color(hwnd, HDC(wparam.0 as isize), false) {
                 return r;

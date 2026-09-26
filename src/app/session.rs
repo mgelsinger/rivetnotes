@@ -11,15 +11,19 @@ use crate::storage::atomic_write::{
 };
 
 #[cfg(test)]
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
+use std::sync::OnceLock;
 
 pub const DEFAULT_REMEMBER_SESSION: bool = true;
 pub const DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP: bool = true;
 pub const DEFAULT_BACKUP_INTERVAL_SECONDS: u32 = 7;
 pub const DEFAULT_WORD_WRAP_ENABLED: bool = true;
+pub const DEFAULT_LINE_NUMBERS_ENABLED: bool = true;
 pub const DEFAULT_ALWAYS_ON_TOP: bool = false;
 
 const APP_DIR_NAME: &str = "Rivet";
+const PORTABLE_DATA_DIR_NAME: &str = "data";
+pub const PORTABLE_MARKER_NAME: &str = "rivet-portable";
 const SESSIONS_DIR_NAME: &str = "sessions";
 const BACKUP_DIR_NAME: &str = "backup";
 const SESSION_FILE_NAME: &str = "session.json";
@@ -114,6 +118,8 @@ pub struct SessionData {
     pub backup_interval_seconds: u32,
     #[serde(default = "default_word_wrap_enabled")]
     pub word_wrap_enabled: bool,
+    #[serde(default = "default_line_numbers_enabled")]
+    pub line_numbers_enabled: bool,
     #[serde(default = "default_always_on_top")]
     pub always_on_top: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -133,6 +139,7 @@ impl SessionData {
             session_snapshot_periodic_backup: DEFAULT_SESSION_SNAPSHOT_PERIODIC_BACKUP,
             backup_interval_seconds: DEFAULT_BACKUP_INTERVAL_SECONDS,
             word_wrap_enabled: DEFAULT_WORD_WRAP_ENABLED,
+            line_numbers_enabled: DEFAULT_LINE_NUMBERS_ENABLED,
             always_on_top: DEFAULT_ALWAYS_ON_TOP,
             window_placement: None,
             active_tab_id: None,
@@ -203,7 +210,70 @@ pub fn decide_restore_source(input: &RestoreDecisionInput) -> RestoreSource {
     }
 }
 
+#[derive(Clone)]
+struct DataLocation {
+    root: PathBuf,
+    portable: bool,
+}
+
+/// Opt in explicitly. Writability cannot distinguish a per-user installation
+/// from an extracted copy. Do not silently fall back to a different profile
+/// when an explicitly selected portable directory is inaccessible.
+pub(crate) fn portable_data_dir(executable: &Path) -> Result<Option<PathBuf>> {
+    let directory = executable
+        .parent()
+        .ok_or_else(|| AppError::new("Invalid executable path."))?;
+    match std::fs::metadata(directory.join(PORTABLE_MARKER_NAME)) {
+        Ok(metadata) if metadata.is_file() => Ok(Some(directory.join(PORTABLE_DATA_DIR_NAME))),
+        Ok(_) => Err(AppError::new("The rivet-portable marker must be a file.")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(AppError::new(format!(
+            "Cannot read portable mode marker: {error}"
+        ))),
+    }
+}
+
+fn detect_data_location() -> Result<DataLocation> {
+    let executable = std::env::current_exe().map_err(|error| AppError::new(error.to_string()))?;
+    if let Some(root) = portable_data_dir(&executable)? {
+        return Ok(DataLocation {
+            root,
+            portable: true,
+        });
+    }
+    Ok(DataLocation {
+        root: installed_data_dir()?,
+        portable: false,
+    })
+}
+
+fn data_location() -> Result<DataLocation> {
+    #[cfg(test)]
+    {
+        detect_data_location()
+    }
+    #[cfg(not(test))]
+    {
+        // Removing a marker during a session must not redirect later backups.
+        static LOCATION: OnceLock<std::result::Result<DataLocation, String>> = OnceLock::new();
+        LOCATION
+            .get_or_init(|| detect_data_location().map_err(|error| error.to_string()))
+            .as_ref()
+            .cloned()
+            .map_err(AppError::new)
+    }
+}
+
 pub fn data_dir() -> Result<PathBuf> {
+    Ok(data_location()?.root)
+}
+
+pub fn portable_profile_dir() -> Result<Option<PathBuf>> {
+    let location = data_location()?;
+    Ok(location.portable.then_some(location.root))
+}
+
+fn installed_data_dir() -> Result<PathBuf> {
     if let Ok(local) = std::env::var("LOCALAPPDATA")
         && !local.is_empty()
     {
@@ -335,6 +405,10 @@ fn default_word_wrap_enabled() -> bool {
     DEFAULT_WORD_WRAP_ENABLED
 }
 
+fn default_line_numbers_enabled() -> bool {
+    DEFAULT_LINE_NUMBERS_ENABLED
+}
+
 fn default_always_on_top() -> bool {
     DEFAULT_ALWAYS_ON_TOP
 }
@@ -343,6 +417,23 @@ fn default_always_on_top() -> bool {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn portable_profiles_require_an_explicit_file_marker() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("rivet.exe");
+        std::fs::create_dir(directory.path().join("data")).unwrap();
+        assert_eq!(portable_data_dir(&executable).unwrap(), None);
+        let marker = directory.path().join(PORTABLE_MARKER_NAME);
+        std::fs::write(&marker, b"").unwrap();
+        assert_eq!(
+            portable_data_dir(&executable).unwrap(),
+            Some(directory.path().join("data"))
+        );
+        std::fs::remove_file(&marker).unwrap();
+        std::fs::create_dir(&marker).unwrap();
+        assert!(portable_data_dir(&executable).is_err());
+    }
     use tempfile::TempDir;
 
     fn with_temp_local_appdata<F>(action: F)
@@ -405,6 +496,7 @@ mod tests {
                 session_snapshot_periodic_backup: true,
                 backup_interval_seconds: 7,
                 word_wrap_enabled: true,
+                line_numbers_enabled: true,
                 always_on_top: true,
                 window_placement: Some(WindowPlacementData {
                     x: 64,
@@ -722,6 +814,7 @@ mod tests {
                 session_snapshot_periodic_backup: true,
                 backup_interval_seconds: 7,
                 word_wrap_enabled: true,
+                line_numbers_enabled: true,
                 always_on_top: false,
                 window_placement: None,
                 active_tab_id: Some(id),

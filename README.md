@@ -4,8 +4,9 @@ Rivet is a Windows-native text editor focused on fast startup, clean behavior,
 and reliable recovery. It is intentionally compact: the core workflows are
 implemented deeply instead of spreading effort across a large plugin surface.
 
-Version 0.4.25 improves save/recovery safety and reliability, building on the
-spellcheck and optional automatic updates introduced in 0.4.23. See the
+Version 0.4.26 adds font selection, a line-number toggle, date/time insertion,
+better save defaults, and explicit portable profiles, with fixes for Recent
+Files, window layout, and dialog themes. See the
 [releases](https://github.com/mgelsinger/rivetnotes/releases) and
 [changelog](CHANGELOG.md) for downloads and version history.
 
@@ -29,6 +30,12 @@ spellcheck and optional automatic updates introduced in 0.4.23. See the
 - Resizable vertical tab panel with persisted width
 - Dirty document indicators in both top and vertical tab views
 - Word wrap toggle and `Always On Top` toggle in the `View` menu
+- `View > Font...` selects the editor's font family and size, remembered across
+  sessions. The default remains Consolas 11; zoom still works independently.
+- `View > Line Numbers` shows or hides the gutter, remembered across sessions
+- `Edit > Insert Date/Time` (`F5`) inserts local time as `YYYY-MM-DD HH:MM`
+- Save dialogs start with the current tab name and default to the selected
+  language's extension. Auto mode preserves an existing file's extension.
 - Zoom (menu, shortcuts, or Ctrl+mousewheel) shared across all tabs and
   persisted between sessions
 - Live word count in the status bar
@@ -98,6 +105,7 @@ spellcheck and optional automatic updates introduced in 0.4.23. See the
 | Cycle tab placement | `Ctrl+Alt+T` |
 | Find | `Ctrl+F` |
 | Replace | `Ctrl+H` |
+| Insert date/time | `F5` |
 | Find next / previous | `F3` / `Shift+F3` |
 | Go to line | `Ctrl+G` |
 | Uppercase / Lowercase | `Ctrl+Shift+U` / `Ctrl+U` |
@@ -148,8 +156,9 @@ Maintainers: see [the updater plan](docs/QUIET-UPDATER-PLAN.md) and
 ## Shell Integration
 
 - Open files from the command line: `rivet.exe <file> [more files]`
-- Single instance: files launched while Rivet is running open as tabs in the
-  existing window
+- Single instance per profile: files launched while Rivet is running open as
+  tabs in that profile's existing window. Separate portable profiles can run
+  alongside an installed copy.
 - The installer adds an `Open with Rivet` Explorer context menu entry and
   registers Rivet in the `Open with` dialog and
   `Settings > Default apps` so it can be set as the default editor for
@@ -184,6 +193,25 @@ Rivet stores state under `%LOCALAPPDATA%\Rivet` (fallback `%APPDATA%\Rivet`):
 - `backup\*.bak` for snapshot files
 - `updates\` for verified downloads and updater diagnostics
 
+### Self-contained portable profiles
+
+To keep an extracted copy's settings and recovery data beside the executable,
+close that copy and create an empty file named **`rivet-portable`** (no extension)
+beside `rivet.exe`. On its next launch, Rivet uses the adjacent `data` directory,
+including `data\logs`. Without this marker, existing AppData behavior continues.
+An inaccessible portable directory reports an error instead of switching profiles.
+
+The marker selects a separate profile; it does not move existing notes. To carry
+an existing profile over, close all Rivet windows, copy the contents of
+`%LOCALAPPDATA%\Rivet` into the new copy's `data` directory, then create the marker.
+Keep the original copy until you have verified the result, and do not overwrite
+another existing portable profile. Separately saved documents still live at their
+original paths and must be copied separately if moving to another computer.
+
+Portable profiles use manual executable updates. Keep the `rivet-portable` file
+and `data` directory when replacing the executable. Changing the marker takes
+effect after that copy is closed and relaunched.
+
 ## Project Quality
 
 - CI enforces formatting, linting, tests, and dependency audits
@@ -191,6 +219,9 @@ Rivet stores state under `%LOCALAPPDATA%\Rivet` (fallback `%APPDATA%\Rivet`):
 - Build metadata is embedded into `Help -> About Rivet`
 - Native data-safety regressions run in CI using hidden windows and an isolated
   profile. The legacy uninstall test confirms that notes survive uninstall.
+- Native editing regressions check font and line-number behavior, date insertion,
+  save history, deleted-file handling, layout, and dialog backgrounds. CI also
+  exercises the actual accelerator table in optimized builds.
 - Find in Files displays up to 10,000 matches, skips physical lines over 1 MiB,
   and avoids directory junctions and symbolic links. Narrow the search if a limit
   is reported. Its text decoding currently targets UTF-8 files.

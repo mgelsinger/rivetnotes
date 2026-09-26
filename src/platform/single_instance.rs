@@ -3,11 +3,13 @@
 
 use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use sha2::{Digest, Sha256};
+
 use windows::Win32::Foundation::{
-    BOOL, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, LPARAM, WPARAM,
+    BOOL, CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND, LPARAM, WPARAM,
 };
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::System::Threading::CreateMutexW;
@@ -15,13 +17,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowW, IsIconic, SMTO_ABORTIFHUNG, SW_RESTORE, SendMessageTimeoutW, SetForegroundWindow,
     ShowWindow, WM_COPYDATA,
 };
-use windows::core::{PCWSTR, w};
+use windows::core::PCWSTR;
 
 use crate::logging;
 
 /// Session-local (no `Global\` prefix): one instance per desktop session.
-const MUTEX_NAME: PCWSTR = w!("RivetNotes_SingleInstance_66885411-0CEF-459E-AA39-4B257B1A4D84");
-const MAIN_WINDOW_CLASS: PCWSTR = w!("rivet_main_window");
+const MUTEX_NAME: &str = "RivetNotes_SingleInstance_66885411-0CEF-459E-AA39-4B257B1A4D84";
+const MAIN_WINDOW_CLASS: &str = "rivet_main_window";
 
 /// `COPYDATASTRUCT.dwData` magic ("RVOP") identifying an open-files request.
 pub const COPYDATA_OPEN_FILES: usize = 0x5256_4F50;
@@ -33,25 +35,45 @@ const SEND_TIMEOUT_MS: u32 = 3000;
 
 pub struct SingleInstance {
     /// Held (never waited on) for the process lifetime; the OS releases it on exit.
-    _handle: Option<HANDLE>,
+    handle: HANDLE,
+    window_class: Vec<u16>,
     pub already_running: bool,
 }
 
-pub fn acquire() -> SingleInstance {
-    match unsafe { CreateMutexW(None, BOOL(0), MUTEX_NAME) } {
-        Ok(handle) => {
-            let already_running = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
-            SingleInstance {
-                _handle: Some(handle),
-                already_running,
-            }
-        }
-        Err(err) => {
-            logging::log_error(&format!("single-instance mutex unavailable: {err}"));
-            SingleInstance {
-                _handle: None,
-                already_running: false,
-            }
+pub fn acquire(portable_profile: Option<&Path>) -> crate::error::Result<SingleInstance> {
+    let (mutex_name, window_class) = instance_names(portable_profile);
+    let mutex_name: Vec<u16> = mutex_name.encode_utf16().chain(Some(0)).collect();
+    let handle = unsafe { CreateMutexW(None, BOOL(0), PCWSTR(mutex_name.as_ptr())) }?;
+    let already_running = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+    Ok(SingleInstance {
+        handle,
+        window_class: window_class.encode_utf16().chain(Some(0)).collect(),
+        already_running,
+    })
+}
+
+fn instance_names(portable_profile: Option<&Path>) -> (String, String) {
+    let suffix = portable_profile.map_or_else(String::new, |path| {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let normalized = canonical.to_string_lossy().to_lowercase();
+        format!("_{}", hex::encode(Sha256::digest(normalized.as_bytes())))
+    });
+    (
+        format!("{MUTEX_NAME}{suffix}"),
+        format!("{MAIN_WINDOW_CLASS}{suffix}"),
+    )
+}
+
+impl SingleInstance {
+    pub fn window_class(&self) -> PCWSTR {
+        PCWSTR(self.window_class.as_ptr())
+    }
+}
+
+impl Drop for SingleInstance {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = CloseHandle(self.handle);
         }
     }
 }
@@ -88,11 +110,10 @@ pub fn decode_paths(buffer: &[u16]) -> Vec<PathBuf> {
 }
 
 /// Bring the existing instance to the foreground and hand it `paths`.
-/// Returns false when no window was found or delivery failed; the caller
-/// should then open its own window.
-pub fn forward_to_existing(paths: &[PathBuf]) -> bool {
-    let Some(hwnd) = find_existing_window() else {
-        logging::log_error("single-instance: existing window not found; opening a new one");
+/// Returns false when no matching profile window was found or delivery failed.
+pub fn forward_to_existing(paths: &[PathBuf], window_class: PCWSTR) -> bool {
+    let Some(hwnd) = find_existing_window(window_class) else {
+        logging::log_error("single-instance: existing profile window not found");
         return false;
     };
 
@@ -130,17 +151,17 @@ pub fn forward_to_existing(paths: &[PathBuf]) -> bool {
         )
     };
     if delivered.0 == 0 || result != 1 {
-        logging::log_error("single-instance: WM_COPYDATA forward failed; opening a new window");
+        logging::log_error("single-instance: WM_COPYDATA forward failed");
         return false;
     }
     true
 }
 
-fn find_existing_window() -> Option<HWND> {
+fn find_existing_window(window_class: PCWSTR) -> Option<HWND> {
     // The first instance may hold the mutex before its window exists; retry
     // briefly to cover that startup race.
     for attempt in 0..FIND_WINDOW_ATTEMPTS {
-        let hwnd = unsafe { FindWindowW(MAIN_WINDOW_CLASS, PCWSTR::null()) };
+        let hwnd = unsafe { FindWindowW(window_class, PCWSTR::null()) };
         if hwnd.0 != 0 {
             return Some(hwnd);
         }
@@ -154,6 +175,32 @@ fn find_existing_window() -> Option<HWND> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn portable_instances_are_isolated_and_release_their_mutex() {
+        let first_directory = tempfile::tempdir().unwrap();
+        let second_directory = tempfile::tempdir().unwrap();
+        let first = acquire(Some(first_directory.path())).unwrap();
+        let second = acquire(Some(second_directory.path())).unwrap();
+        let duplicate = acquire(Some(first_directory.path())).unwrap();
+        assert!(!first.already_running);
+        assert!(!second.already_running);
+        assert!(duplicate.already_running);
+        assert_eq!(first.window_class, duplicate.window_class);
+        assert_ne!(first.window_class, second.window_class);
+        assert_eq!(
+            instance_names(None),
+            (MUTEX_NAME.to_string(), MAIN_WINDOW_CLASS.to_string())
+        );
+        drop(duplicate);
+        drop(first);
+        assert!(
+            !acquire(Some(first_directory.path()))
+                .unwrap()
+                .already_running
+        );
+    }
 
     #[test]
     fn encode_decode_round_trip() {
