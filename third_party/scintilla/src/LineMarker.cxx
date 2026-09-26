@@ -5,6 +5,7 @@
 // Copyright 1998-2011 by Neil Hodgson <neilh@scintilla.org>
 // The License.txt file describes the conditions under which this software may be distributed.
 
+#include <cstdint>
 #include <cstring>
 #include <cmath>
 
@@ -195,7 +196,7 @@ void LineMarker::DrawFoldingMark(Surface *surface, const PRectangle &rcWhole, Fo
 	// To centre +/-, odd strokeWidth -> odd symbol width, even -> even
 	const XYPOSITION widthSymbol =
 		((std::lround(minDimension * pixelDivisions) % 2) == (std::lround(widthStroke * pixelDivisions) % 2)) ?
-		minDimension : minDimension - 1.0f / pixelDivisions;
+		minDimension : minDimension - (1.0 / static_cast<XYPOSITION>(pixelDivisions));
 
 	const Point centre = PixelAlign(rcWhole.Centre(), pixelDivisions);
 
@@ -370,7 +371,11 @@ void LineMarker::Draw(Surface *surface, const PRectangle &rcWhole, const Font *f
 	const XYPOSITION centreY = std::floor(centre.y);
 	const XYPOSITION dimOn2 = std::floor(minDim / 2);
 	const XYPOSITION dimOn4 = std::floor(minDim / 4);
-	const XYPOSITION armSize = dimOn2 - 2;
+	// Half-thickness of the plus/minus bars, historically 1 pixel.  Scale
+	// with strokeWidth so the symbols keep their weight when the surface
+	// is in device pixels and strokeWidth has been set to match.
+	const XYPOSITION barOn2 = std::round(std::max<XYPOSITION>(strokeWidth, 1.0));
+	const XYPOSITION armSize = dimOn2 - 2 * barOn2;
 	if (marginStyle == MarginType::Number || marginStyle == MarginType::Text || marginStyle == MarginType::RText) {
 		// On textual margins move marker to the left to try to avoid overlapping the text
 		centreX = rcWhole.left + dimOn2 + 1;
@@ -417,18 +422,18 @@ void LineMarker::Draw(Surface *surface, const PRectangle &rcWhole, const Font *f
 
 	case MarkerSymbol::Plus: {
 			const Point pts[] = {
-				Point(centreX - armSize, centreY - 1),
-				Point(centreX - 1, centreY - 1),
-				Point(centreX - 1, centreY - armSize),
-				Point(centreX + 1, centreY - armSize),
-				Point(centreX + 1, centreY - 1),
-				Point(centreX + armSize, centreY - 1),
-				Point(centreX + armSize, centreY + 1),
-				Point(centreX + 1, centreY + 1),
-				Point(centreX + 1, centreY + armSize),
-				Point(centreX - 1, centreY + armSize),
-				Point(centreX - 1, centreY + 1),
-				Point(centreX - armSize, centreY + 1),
+				Point(centreX - armSize, centreY - barOn2),
+				Point(centreX - barOn2, centreY - barOn2),
+				Point(centreX - barOn2, centreY - armSize),
+				Point(centreX + barOn2, centreY - armSize),
+				Point(centreX + barOn2, centreY - barOn2),
+				Point(centreX + armSize, centreY - barOn2),
+				Point(centreX + armSize, centreY + barOn2),
+				Point(centreX + barOn2, centreY + barOn2),
+				Point(centreX + barOn2, centreY + armSize),
+				Point(centreX - barOn2, centreY + armSize),
+				Point(centreX - barOn2, centreY + barOn2),
+				Point(centreX - armSize, centreY + barOn2),
 			};
 			AlignedPolygon(surface, pts, std::size(pts));
 		}
@@ -436,10 +441,10 @@ void LineMarker::Draw(Surface *surface, const PRectangle &rcWhole, const Font *f
 
 	case MarkerSymbol::Minus: {
 			const Point pts[] = {
-				Point(centreX - armSize, centreY - 1),
-				Point(centreX + armSize, centreY - 1),
-				Point(centreX + armSize, centreY + 1),
-				Point(centreX - armSize, centreY + 1),
+				Point(centreX - armSize, centreY - barOn2),
+				Point(centreX + armSize, centreY - barOn2),
+				Point(centreX + armSize, centreY + barOn2),
+				Point(centreX - armSize, centreY + barOn2),
 			};
 			AlignedPolygon(surface, pts, std::size(pts));
 		}
@@ -463,11 +468,13 @@ void LineMarker::Draw(Surface *surface, const PRectangle &rcWhole, const Font *f
 		break;
 
 	case MarkerSymbol::DotDotDot: {
-			XYPOSITION right = static_cast<XYPOSITION>(centreX - 6);
+			// 3 2x2 dots with 3 pixels between, margin must be 12 wide to show all
+			constexpr XYPOSITION pitchDots = 5.0;
+			XYPOSITION xBlob = std::floor(centreX - (pitchDots + 1));
 			for (int b = 0; b < 3; b++) {
-				const PRectangle rcBlob(right, rc.bottom - 4, right + 2, rc.bottom - 2);
+				const PRectangle rcBlob(xBlob, rc.bottom - 4, xBlob + 2, rc.bottom - 2);
 				surface->FillRectangle(rcBlob, fore);
-				right += 5.0f;
+				xBlob += pitchDots;
 			}
 		}
 		break;
@@ -515,26 +522,28 @@ void LineMarker::Draw(Surface *surface, const PRectangle &rcWhole, const Font *f
 		break;
 
 	case MarkerSymbol::Bar: {
+			// Hide cap by continuing a bit.
+			constexpr XYPOSITION continueLength = 5.0;
 			PRectangle rcBar = rcWhole;
-			const XYPOSITION widthBar = std::floor(rcWhole.Width() / 3.0);
+			const XYPOSITION widthBar = std::ceil(rcWhole.Width() / 3.0);
 			rcBar.left = centreX - std::floor(widthBar / 2.0);
 			rcBar.right = rcBar.left + widthBar;
-			surface->SetClip(rcWhole);
+			surface->SetClip(rcWhole);	// Hide continued caps
 			switch (part) {
 			case LineMarker::FoldPart::headWithTail:
 				surface->RectangleDraw(rcBar, FillStroke(back, fore, strokeWidth));
 				break;
 			case LineMarker::FoldPart::head:
-				rcBar.bottom += 5;
+				rcBar.bottom += continueLength;
 				surface->RectangleDraw(rcBar, FillStroke(back, fore, strokeWidth));
 				break;
 			case LineMarker::FoldPart::tail:
-				rcBar.top -= 5;
+				rcBar.top -= continueLength;
 				surface->RectangleDraw(rcBar, FillStroke(back, fore, strokeWidth));
 				break;
 			case LineMarker::FoldPart::body:
-				rcBar.top -= 5;
-				rcBar.bottom += 5;
+				rcBar.top -= continueLength;
+				rcBar.bottom += continueLength;
 				surface->RectangleDraw(rcBar, FillStroke(back, fore, strokeWidth));
 				break;
 			default:

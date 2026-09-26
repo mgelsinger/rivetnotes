@@ -32,7 +32,7 @@ jobs:
           toolchain: stable
           components: clippy
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
   test:
     name: cargo test
@@ -44,12 +44,15 @@ jobs:
         with:
           toolchain: stable
       - name: Test
-        run: cargo test
+        run: cargo test --locked
+      - name: Native data-safety regressions
+        run: cargo test --locked platform::win32::safety_tests -- --ignored --test-threads=1
+      - name: Legacy uninstall preserves notes
+        run: pwsh -File scripts/test-legacy-uninstall.ps1
 
   audit:
     name: RustSec audit
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -58,3 +61,6 @@ jobs:
           toolchain: stable
       - name: RustSec audit
         uses: actions-rust-lang/audit@v1
+        with:
+          denyWarnings: true
+          createIssues: false

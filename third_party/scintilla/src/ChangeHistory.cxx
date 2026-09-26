@@ -7,9 +7,11 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <cstdint>
 #include <cassert>
 
 #include <stdexcept>
+#include <utility>
 #include <vector>
 #include <set>
 #include <algorithm>

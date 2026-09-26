@@ -4,6 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::app::document::{Eol, TextEncoding};
 use crate::error::{AppError, Result};
 use crate::storage::atomic_write::{
     atomic_write_bytes, atomic_write_json, cleanup_stale_temp_files,
@@ -69,6 +70,10 @@ impl WindowPlacementData {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionEntry {
+    #[serde(default)]
+    pub encoding: Option<TextEncoding>,
+    #[serde(default)]
+    pub eol: Option<Eol>,
     #[serde(rename = "tab_id", alias = "id")]
     pub id: Uuid,
     #[serde(default)]
@@ -239,14 +244,15 @@ pub fn ensure_storage_dirs() -> Result<()> {
         .map_err(|err| AppError::new(format!("Failed to create sessions directory: {err}")))?;
     std::fs::create_dir_all(&backups)
         .map_err(|err| AppError::new(format!("Failed to create backup directory: {err}")))?;
-    let max_age = Duration::from_secs(TEMP_CLEANUP_MAX_AGE_DAYS * 24 * 60 * 60);
-    let _ = cleanup_stale_temp_files(&sessions, max_age);
-    let _ = cleanup_stale_temp_files(&backups, max_age);
     Ok(())
 }
 
 pub fn load_session() -> Result<SessionData> {
     ensure_storage_dirs()?;
+    // Directory scans belong at startup, not on every periodic checkpoint.
+    let max_age = Duration::from_secs(TEMP_CLEANUP_MAX_AGE_DAYS * 24 * 60 * 60);
+    let _ = cleanup_stale_temp_files(&sessions_dir()?, max_age);
+    let _ = cleanup_stale_temp_files(&backup_dir()?, max_age);
     let path = session_file_path()?;
     if !path.exists() {
         return Ok(SessionData::empty());
@@ -254,9 +260,20 @@ pub fn load_session() -> Result<SessionData> {
 
     let bytes = std::fs::read(&path)
         .map_err(|err| AppError::new(format!("Failed to read session file: {err}")))?;
-    let session: SessionData = serde_json::from_slice(&bytes)
-        .map_err(|err| AppError::new(format!("Failed to parse session file: {err}")))?;
-    Ok(session.normalized())
+    let session: SessionData = serde_json::from_slice(&bytes).map_err(|err| {
+        let recovery = path.with_extension(format!("invalid-{}.json", Uuid::new_v4()));
+        match std::fs::rename(&path, &recovery) {
+            Ok(()) => AppError::new(format!("Failed to parse session file: {err}. The original is preserved at {}. Restart Rivet to open a new session.", recovery.display())),
+            Err(copy_error) => AppError::new(format!("Failed to parse session file: {err}; could not preserve it: {copy_error}")),
+        }
+    })?;
+    let mut session = session.normalized();
+    for entry in &mut session.entries {
+        // Recovery files always belong to this profile and tab ID. A moved or
+        // edited session must not redirect later backup writes/deletions.
+        entry.backup_path = backup_path_for_id(entry.id)?;
+    }
+    Ok(session)
 }
 
 pub fn save_session(data: &SessionData) -> Result<()> {
@@ -398,6 +415,8 @@ mod tests {
                 }),
                 active_tab_id: Some(id),
                 entries: vec![SessionEntry {
+                    encoding: None,
+                    eol: None,
                     id,
                     path: Some(PathBuf::from("C:\\notes\\sample.txt")),
                     display_name: "sample.txt".to_string(),
@@ -416,6 +435,50 @@ mod tests {
             save_session(&data).unwrap();
             let loaded = load_session().unwrap();
             assert_eq!(loaded, data);
+        });
+    }
+
+    #[test]
+    fn corrupt_session_is_preserved_before_starting_over() {
+        with_temp_local_appdata(|_| {
+            ensure_storage_dirs().unwrap();
+            let path = session_file_path().unwrap();
+            std::fs::write(&path, b"{ broken session").unwrap();
+            assert!(load_session().is_err());
+            assert!(!path.exists());
+            let preserved: Vec<_> = std::fs::read_dir(sessions_dir().unwrap())
+                .unwrap()
+                .filter_map(std::result::Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().contains("invalid-"))
+                .collect();
+            assert_eq!(preserved.len(), 1);
+            assert_eq!(
+                std::fs::read(preserved[0].path()).unwrap(),
+                b"{ broken session"
+            );
+            assert!(load_session().unwrap().entries.is_empty());
+        });
+    }
+
+    #[test]
+    fn loaded_sessions_cannot_redirect_backup_writes_outside_profile() {
+        with_temp_local_appdata(|root| {
+            ensure_storage_dirs().unwrap();
+            let id = Uuid::new_v4();
+            let unrelated = root.join("unrelated.txt");
+            std::fs::write(&unrelated, b"keep").unwrap();
+            let mut value = serde_json::to_value(SessionData::empty()).unwrap();
+            value["entries"] = serde_json::json!([{
+                "tab_id": id, "backup_file": unrelated, "was_dirty_at_last_exit": true,
+                "backup_timestamp": null, "disk_timestamp_at_backup": null
+            }]);
+            atomic_write_json(&session_file_path().unwrap(), &value).unwrap();
+            let loaded = load_session().unwrap();
+            assert_eq!(
+                loaded.entries[0].backup_path,
+                backup_path_for_id(id).unwrap()
+            );
+            assert_eq!(std::fs::read(unrelated).unwrap(), b"keep");
         });
     }
 
@@ -663,6 +726,8 @@ mod tests {
                 window_placement: None,
                 active_tab_id: Some(id),
                 entries: vec![SessionEntry {
+                    encoding: None,
+                    eol: None,
                     id,
                     path: Some(disk_path.clone()),
                     display_name: "doc.txt".to_string(),

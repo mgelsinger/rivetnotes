@@ -29,22 +29,27 @@ Do NOT add `Co-Authored-By` trailers or any AI attribution to commits, PR bodies
 
 ## Architecture Overview
 
-Rivetnotes is a **Windows-native text editor** written in Rust. All unsafe Win32/FFI code is isolated in `src/platform/win32.rs`; the rest is safe Rust.
+Rivetnotes is a **Windows-native text editor** written in Rust with vendored C++
+editor components. Unsafe Win32/FFI code exists in `platform/`, the Scintilla
+binding, atomic storage, and logging. Do not assume the rest of the UI is memory
+safe merely because it is Rust; synchronous Windows callbacks can reenter it.
 
 ### Module Responsibilities
 
 | Module | Role |
 |--------|------|
-| `platform/win32.rs` (~7200 lines) | Win32 message loop, all UI, menus, dialogs, tab control, status bar |
+| `platform/win32.rs` | Win32 message loop, UI, menus, dialogs, tab control, status bar |
 | `editor/scintilla.rs` | Scintilla C++ library bindings — communicates via Windows messages to embedded child window |
 | `editor/markdown.rs` | Pure (testable) markdown heading fold-level computation, code-fence aware |
 | `app/document.rs` | Document metadata: path, encoding, EOL mode, dirty flag, cursor position, backup path, large-file flag |
 | `app/session.rs` | `SessionData` (open tabs, active tab, schema version), restore logic, periodic checkpoint |
 | `app/settings.rs` | `UiSettings`: tab placement (Top/Left/Right), vertical-tab width, dark mode, smart-highlight, large-file thresholds, recent files (MRU) |
-| `storage/atomic_write.rs` | Crash-safe atomic writes (temp-file + replace), JSON serialization, stale-temp cleanup |
+| `storage/atomic_write.rs` | Atomic document/session/backup writes, permission preservation, recovery copies, stale-temp cleanup |
+| `editor/spellcheck.rs`, `platform/spellcheck.rs` | Bounded prose scans and a dedicated Windows spelling-provider worker |
+| `app/updates.rs`, `platform/update_io.rs`, `update_protocol.rs` | Update state, native HTTPS/installer integration, signed release verification |
 | `textops/` | Text transforms: trim whitespace, strikethrough |
 | `commands/` | Clipboard helpers (copy path/filename/directory), selection case checks |
-| `logging.rs` | Rotating file logs to `%APPDATA%\Rivet\logs\`, controlled by `RIVET_VERBOSE` env var |
+| `logging.rs` | Rotating file logs to `%LOCALAPPDATA%\Rivet\logs\`, controlled by `RIVET_VERBOSE` env var |
 | `error.rs` | Central `AppError` type; user-facing errors shown via `platform::win32::show_error()` |
 
 ### Data Flow

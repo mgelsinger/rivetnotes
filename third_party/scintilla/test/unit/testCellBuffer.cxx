@@ -3,6 +3,7 @@
  **/
 
 #include <cstddef>
+#include <cstdint>
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
@@ -12,6 +13,7 @@
 #include <optional>
 #include <algorithm>
 #include <memory>
+#include <ostream>
 
 #include "ScintillaTypes.h"
 

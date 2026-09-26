@@ -5,6 +5,40 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 ## [Unreleased]
 
+## [0.4.24] - 2026-09-25
+
+### Fixed
+
+- Save documents atomically instead of truncating the existing file. Preserve
+  access permissions and named streams; retain recovery copies if replacement
+  fails and report their paths.
+- Preserve embedded NUL characters and the original encoding/EOL through
+  editing, recovery, and saving.
+- Prompt before closing an unsaved tab, even with periodic snapshots enabled.
+  Keep discard choices reversible until all exit prompts have completed.
+- Require a final session checkpoint before closing, and checkpoint on Windows
+  sign-out/shutdown without launching the updater.
+- Report failed recovery snapshots inline and back off automatic retries instead
+  of silently retrying every few seconds. Final close always retries immediately.
+- Preserve malformed session files and entries that temporarily fail to restore;
+  derive backup paths from the current profile instead of trusting stored paths.
+- Bound Find in Files results and line buffers, reject invalid regular expressions,
+  avoid directory junction loops, and cancel the correct worker when restarting.
+- Recover from an unexpectedly disconnected update worker instead of staying busy.
+- Keep notes, settings, and unrelated shortcuts when using the legacy uninstall script.
+
+### Changed
+
+- Update Scintilla to 5.6.6 and Lexilla to 5.5.3 with upstream crash and editing fixes.
+- Update the locked `anyhow` dependency to the version fixing RUSTSEC-2026-0190.
+- Start spelling workers only for eligible documents, reduce filename-pattern
+  memory use, rotate logs during long sessions, and remove unused document fields.
+- Avoid repeated backup-directory scans and unnecessary C++ rebuilds after Git
+  operations; rebuild the native libraries when their headers change.
+- Make dependency audits and native data-safety regressions CI/release gates.
+
+See [the safety review](https://github.com/mgelsinger/rivetnotes/blob/v0.4.24/docs/SAFETY-REVIEW-2026-09-25.md) for validation and limits.
+
 ## [0.4.23] - 2026-09-25
 
 ### Added

@@ -3,6 +3,10 @@ Lexilla notice for Rivet
 
 Rivet bundles Lexilla source code from `third_party/lexilla`.
 Upstream project: https://www.scintilla.org/Lexilla.html
+Vendored version: 5.5.3
+Source archive: https://www.scintilla.org/lexilla553.zip
+Archive SHA-256: 2092b1dd18355321717e3bde25148e4c87e691723ca2b06a65e29a307c5462a6
+Rivet retains its custom src/LexillaMinimal.cxx lexer catalogue.
 
 License for Lexilla, Scintilla, and SciTE
 

@@ -45,6 +45,10 @@ public:
 		return Point(x - other.x, y - other.y);
 	}
 
+	constexpr Point operator*(XYPOSITION multiplier) const noexcept {
+		return Point(x * multiplier, y * multiplier);
+	}
+
 	// Other automatically defined methods (assignment, copy constructor, destructor) are fine
 };
 
@@ -68,6 +72,9 @@ public:
 	}
 	constexpr Interval Offset(XYPOSITION offset) const noexcept {
 		return {left + offset, right + offset};
+	}
+	[[nodiscard]] static constexpr Interval FromLeftAndWidth(XYPOSITION left_, XYPOSITION width) {
+		return {left_, left_+width};
 	}
 };
 
@@ -98,6 +105,15 @@ public:
 		return (rc.left == left) && (rc.right == right) &&
 			(rc.top == top) && (rc.bottom == bottom);
 	}
+	
+	constexpr PRectangle operator*(XYPOSITION multiplier) const noexcept {
+		return PRectangle(left * multiplier, top * multiplier, right * multiplier, bottom * multiplier);
+	}
+
+	constexpr PRectangle operator/(XYPOSITION divisor) const noexcept {
+		return PRectangle(left / divisor, top / divisor, right / divisor, bottom / divisor);
+	}
+
 	constexpr bool Contains(Point pt) const noexcept {
 		return (pt.x >= left) && (pt.x <= right) &&
 			(pt.y >= top) && (pt.y <= bottom);
@@ -249,8 +265,11 @@ public:
 		return ComponentAsFloat(GetAlpha());
 	}
 
-	constexpr bool operator==(const ColourRGBA &other) const noexcept {
+	[[nodiscard]] constexpr bool operator==(const ColourRGBA &other) const noexcept {
 		return co == other.co;
+	}
+	[[nodiscard]] constexpr bool operator!=(const ColourRGBA &other) const noexcept {
+		return co != other.co;
 	}
 
 	constexpr bool IsOpaque() const noexcept {

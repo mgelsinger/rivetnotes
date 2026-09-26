@@ -15,7 +15,6 @@ use crate::app::document::Eol;
 use crate::error::{AppError, Result};
 
 const SCI_SETCODEPAGE: u32 = 2037;
-const SCI_SETTEXT: u32 = 2181;
 const SCI_GETTEXT: u32 = 2182;
 const SCI_GETTEXTRANGEFULL: u32 = 2039;
 const SCI_INSERTTEXT: u32 = 2003;
@@ -628,10 +627,13 @@ fn apply_fold_properties(hwnd: HWND) {
 }
 
 pub fn set_text(hwnd: HWND, text: &str) -> Result<()> {
-    let mut buffer = Vec::with_capacity(text.len() + 1);
-    buffer.extend_from_slice(text.as_bytes());
-    buffer.push(0);
-    send_message(hwnd, SCI_SETTEXT, 0, buffer.as_ptr() as isize);
+    // SCI_SETTEXT uses strlen and silently discards everything after a NUL.
+    // Use a length-bearing replacement, grouped as one undoable operation.
+    begin_undo_action(hwnd);
+    set_target_range(hwnd, 0, get_length(hwnd));
+    replace_target(hwnd, text);
+    set_selection(hwnd, 0, 0);
+    end_undo_action(hwnd);
     Ok(())
 }
 

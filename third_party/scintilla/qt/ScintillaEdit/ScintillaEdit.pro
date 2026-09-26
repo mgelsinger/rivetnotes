@@ -13,7 +13,7 @@ TEMPLATE = lib
 CONFIG += lib_bundle
 CONFIG += c++1z
 
-VERSION = 5.5.2
+VERSION = 5.6.6
 
 SOURCES += \
     ScintillaEdit.cpp \

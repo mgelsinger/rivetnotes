@@ -33,6 +33,7 @@
 **.vbs text
 **.ans text
 **.asm text
+**.bc text
 **.cob text
 **.cmake text
 **.d text
@@ -40,6 +41,8 @@
 **.diff text
 **.erl text
 **.f text
+**.f90 text
+**.forth text
 **.gd text
 **.gui text
 **.iss text

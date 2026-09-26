@@ -17,7 +17,41 @@ static LOGGER: OnceLock<Mutex<Logger>> = OnceLock::new();
 
 struct Logger {
     file: Option<File>,
+    path: PathBuf,
+    bytes_written: u64,
     verbose: bool,
+}
+
+impl Logger {
+    fn new(path: PathBuf, verbose: bool) -> Self {
+        let file = open_log_file(&path).ok();
+        let bytes_written = file
+            .as_ref()
+            .and_then(|file| file.metadata().ok())
+            .map_or(0, |metadata| metadata.len());
+        Self {
+            file,
+            path,
+            bytes_written,
+            verbose,
+        }
+    }
+
+    fn append(&mut self, line: &str) {
+        if self.bytes_written >= MAX_LOG_SIZE {
+            // Close before renaming on Windows. Long-running instances need
+            // rotation too, not only applications that are frequently restarted.
+            self.file.take();
+            self.file = open_log_file(&self.path).ok();
+            self.bytes_written = 0;
+        }
+        if let Some(file) = self.file.as_mut()
+            && file.write_all(line.as_bytes()).is_ok()
+        {
+            self.bytes_written = self.bytes_written.saturating_add(line.len() as u64);
+            let _ = file.flush();
+        }
+    }
 }
 
 pub fn verbose_from_env() -> bool {
@@ -31,8 +65,7 @@ pub fn verbose_from_env() -> bool {
 }
 
 pub fn init(verbose: bool) -> Result<()> {
-    let file = open_log_file().ok();
-    let logger = Logger { file, verbose };
+    let logger = Logger::new(log_directory()?.join("rivet.log"), verbose);
     let _ = LOGGER.set(Mutex::new(logger));
     log_info("logging initialized");
     Ok(())
@@ -56,27 +89,36 @@ fn write_line(level: &str, message: &str, force: bool) {
     if !force && !logger.verbose {
         return;
     }
-    let Some(file) = logger.file.as_mut() else {
-        return;
-    };
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
-    let _ = writeln!(file, "{timestamp} [{level}] {message}");
-    let _ = file.flush();
+    let mut end = message.len().min(16 * 1024);
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    let suffix = if end < message.len() {
+        " [truncated]"
+    } else {
+        ""
+    };
+    logger.append(&format!(
+        "{timestamp} [{level}] {}{suffix}\n",
+        &message[..end]
+    ));
 }
 
-fn open_log_file() -> Result<File> {
-    let dir = log_directory()?;
-    fs::create_dir_all(&dir)
+fn open_log_file(log_path: &Path) -> Result<File> {
+    let dir = log_path
+        .parent()
+        .ok_or_else(|| AppError::new("Invalid log path"))?;
+    fs::create_dir_all(dir)
         .map_err(|err| AppError::new(format!("Failed to create log directory: {err}")))?;
-    let log_path = dir.join("rivet.log");
-    rotate_logs(&log_path)?;
+    rotate_logs(log_path)?;
     OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&log_path)
+        .open(log_path)
         .map_err(|err| AppError::new(format!("Failed to open log file: {err}")))
 }
 
@@ -126,4 +168,28 @@ fn rotate_logs(path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn logging_rotates_while_the_process_remains_open() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("rivet.log");
+        let mut logger = Logger::new(path.clone(), true);
+        let line = "x".repeat(16 * 1024);
+        for _ in 0..200 {
+            logger.append(&line);
+        }
+        drop(logger);
+        let files: Vec<_> = fs::read_dir(directory.path()).unwrap().collect();
+        assert_eq!(files.len(), MAX_LOG_FILES + 1);
+        for file in files {
+            assert!(file.unwrap().metadata().unwrap().len() <= MAX_LOG_SIZE);
+        }
+        assert!(path.exists());
+    }
 }

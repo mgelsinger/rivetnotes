@@ -19,7 +19,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: RustSec audit
+        uses: actions-rust-lang/audit@v1
+        with:
+          denyWarnings: true
+          createIssues: false
+
   windows:
+    needs: audit
     runs-on: windows-latest
     permissions:
       contents: write
@@ -45,9 +64,13 @@ jobs:
       - name: Format
         run: cargo fmt --check
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
       - name: Test
-        run: cargo test
+        run: cargo test --locked
+      - name: Native data-safety regressions
+        run: cargo test --locked platform::win32::safety_tests -- --ignored --test-threads=1
+      - name: Legacy uninstall preserves notes
+        run: pwsh -File scripts/test-legacy-uninstall.ps1
       - name: Build portable
         run: pwsh -ExecutionPolicy Bypass -File scripts\package.ps1
       - name: Build installer

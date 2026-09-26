@@ -49,43 +49,37 @@ public:
 class LineLayout {
 private:
 	std::unique_ptr<int []>lineStarts;
-	int lenLineStarts;
+	int lenLineStarts = 0;
 	/// Drawing is only performed for @a maxLineLength characters on each line.
 	Sci::Line lineNumber;
 public:
 	enum { wrapWidthInfinite = 0x7ffffff };
 
-	int maxLineLength;
-	int numCharsInLine;
-	int numCharsBeforeEOL;
-	enum class ValidLevel { invalid, checkTextAndStyle, positions, lines } validity;
-	int xHighlightGuide;
-	bool highlightColumn;
-	bool containsCaret;
-	int edgeColumn;
+	int maxLineLength = -1;
+	int numCharsInLine = 0;
+	int numCharsBeforeEOL = 0;
+	enum class ValidLevel { invalid, checkTextAndStyle, positions, lines };
+	ValidLevel validity = ValidLevel::invalid;
+	int xHighlightGuide = 0;
+	bool highlightColumn = false;
+	bool containsCaret = false;
+	unsigned char bracePreviousStyles[2]{};
+	int edgeColumn = 0;
 	std::unique_ptr<char[]> chars;
 	std::unique_ptr<unsigned char[]> styles;
 	std::unique_ptr<XYPOSITION[]> positions;
-	unsigned char bracePreviousStyles[2];
 
 	std::unique_ptr<BidiData> bidiData;
 
 	// Wrapped line support
-	int widthLine;
-	int lines;
-	XYPOSITION wrapIndent; // In pixels
+	int widthLine = wrapWidthInfinite;
+	int lines = 1;
+	XYPOSITION wrapIndent = 0; // In pixels
 
 	LineLayout(Sci::Line lineNumber_, int maxLineLength_);
-	// Deleted so LineLayout objects can not be copied.
-	LineLayout(const LineLayout &) = delete;
-	LineLayout(LineLayout &&) = delete;
-	void operator=(const LineLayout &) = delete;
-	void operator=(LineLayout &&) = delete;
-	virtual ~LineLayout();
 	void Resize(int maxLineLength_);
 	void ReSet(Sci::Line lineNumber_, Sci::Position maxLineLength_);
 	void EnsureBidiData();
-	void Free() noexcept;
 	void ClearPositions();
 	void Invalidate(ValidLevel validity_) noexcept;
 	Sci::Line LineNumber() const noexcept;
@@ -108,6 +102,7 @@ public:
 	Interval Span(int start, int end) const noexcept;
 	Interval SpanByte(int index) const noexcept;
 	int EndLineStyle() const noexcept;
+	[[nodiscard]] int LastStyle() const noexcept;
 	void WrapLine(const Document *pdoc, Sci::Position posLineStart, Wrap wrapState, XYPOSITION wrapWidth);
 };
 
@@ -262,6 +257,8 @@ public:
 	TextSegment Next();
 	bool More() const noexcept;
 };
+
+constexpr size_t positionCacheDefaultSize = 0x400;
 
 class IPositionCache {
 public:

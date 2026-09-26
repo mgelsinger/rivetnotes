@@ -4,7 +4,8 @@ Rivet is a Windows-native text editor focused on fast startup, clean behavior,
 and reliable recovery. It is intentionally compact: the core workflows are
 implemented deeply instead of spreading effort across a large plugin surface.
 
-Version 0.4.23 introduces spellcheck and optional automatic updates. See the
+Version 0.4.24 improves save/recovery safety and reliability, building on the
+spellcheck and optional automatic updates introduced in 0.4.23. See the
 [releases](https://github.com/mgelsinger/rivetnotes/releases) and
 [changelog](CHANGELOG.md) for downloads and version history.
 
@@ -41,7 +42,7 @@ Version 0.4.23 introduces spellcheck and optional automatic updates. See the
   - Match case, whole word, regex, wrap
   - `Replace All` grouped into a single undo step
 - `Go To Line` (`Ctrl+G`)
-- Find in Files with cancel support
+- Find in Files with cancellation, validated regexes, and bounded results
 
 ### File and Session Safety
 
@@ -50,7 +51,11 @@ Version 0.4.23 introduces spellcheck and optional automatic updates. See the
 - Encoding detection: UTF-8, UTF-8 BOM, UTF-16 LE/BE, with Windows-1252
   (ANSI) fallback for legacy files
 - Periodic backup snapshots for unsaved changes
-- Crash-safe atomic writes for session and backup data
+- Atomic document saves, session writes, and backups, with recovery copies on
+  replacement failure
+- Dirty-tab close confirmation; final recovery checkpoints on close and Windows
+  sign-out/shutdown
+- Encoding and embedded NUL preservation through backup and restore
 - Stale temp cleanup at startup
 
 ### Language and Text Tools
@@ -181,9 +186,16 @@ Rivet stores state under `%LOCALAPPDATA%\Rivet` (fallback `%APPDATA%\Rivet`):
 
 ## Project Quality
 
-- CI enforces formatting, linting, and tests
+- CI enforces formatting, linting, tests, and dependency audits
 - Unit tests cover core session, settings, text transform, and command behavior
 - Build metadata is embedded into `Help -> About Rivet`
+- Native data-safety regressions run in CI using hidden windows and an isolated
+  profile. The legacy uninstall test confirms that notes survive uninstall.
+- Find in Files displays up to 10,000 matches, skips physical lines over 1 MiB,
+  and avoids directory junctions and symbolic links. Narrow the search if a limit
+  is reported. Its text decoding currently targets UTF-8 files.
+- The [September safety review](docs/SAFETY-REVIEW-2026-09-25.md) records fixes,
+  test evidence, and remaining manual checks for version 0.4.24.
 - Desktop and updater integration tests can be run with
   `cargo test -- --ignored --test-threads=1`. They require an installed Windows
   spelling provider and internet access, and use a hidden editor with temporary

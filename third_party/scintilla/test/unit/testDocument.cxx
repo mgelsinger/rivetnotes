@@ -3,17 +3,27 @@
  **/
 
 #include <cstddef>
+#include <cstdlib>
+#include <cstdint>
 #include <cstring>
+
 #include <stdexcept>
+#include <utility>
+#include <string>
 #include <string_view>
 #include <vector>
+#include <map>
 #include <set>
 #include <optional>
 #include <algorithm>
+#include <iterator>
 #include <memory>
+#include <ios>
+#include <ostream>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <locale>
 
 #include "ScintillaTypes.h"
 
@@ -32,6 +42,7 @@
 #include "Decoration.h"
 #include "CaseFolder.h"
 #include "Document.h"
+#include "UniConversion.h"
 
 #include "catch.hpp"
 
@@ -64,23 +75,6 @@ const Folding foldings1252[] = {
 	{0x9f, 0xff, 0x01},
 	{0xc0, 0xe0, 0x17},
 	{0xd8, 0xf8, 0x07},
-};
-
-// Table of case folding for non-ASCII bytes in Windows Russian code page 1251
-const Folding foldings1251[] = {
-	{0x80, 0x90, 0x01},
-	{0x81, 0x83, 0x01},
-	{0x8a, 0x9a, 0x01},
-	{0x8c, 0x9c, 0x04},
-	{0xa1, 0xa2, 0x01},
-	{0xa3, 0xbc, 0x01},
-	{0xa5, 0xb4, 0x01},
-	{0xa8, 0xb8, 0x01},
-	{0xaa, 0xba, 0x01},
-	{0xaf, 0xbf, 0x01},
-	{0xb2, 0xb3, 0x01},
-	{0xbd, 0xbe, 0x01},
-	{0xc0, 0xe0, 0x20},
 };
 
 std::string ReadFile(const std::string &path) {
@@ -171,7 +165,29 @@ struct DocPlus {
 		document.GetCharRange(contents.data(), 0, length);
 		return contents;
 	}
+
+	[[nodiscard]] std::string Styles() const {
+		const Sci::Position length = document.Length();
+		std::string contents(length, 0);
+		document.GetStyleRange(reinterpret_cast<unsigned char *>(contents.data()), 0, length);
+		return contents;
+	}
 };
+
+namespace {
+
+// Provide an empty watcher to avoid filling in all the virtuals in simple watchers.
+struct EmptyWatcher : public DocWatcher {
+	void NotifyModifyAttempt(Document *, void *) override {};
+	void NotifySavePoint(Document *, void *, bool) override {};
+	void NotifyModified(Document *, DocModification, void *) override {};
+	void NotifyDeleted(Document *, void *) noexcept override {};
+	void NotifyStyleNeeded(Document *, void *, Sci::Position) override {};
+	void NotifyErrorOccurred(Document *, void *, Scintilla::Status) override {};
+	void NotifyGroupCompleted(Document *, void *) noexcept override {};
+};
+
+}
 
 void TimeTrace(std::string_view sv, const Catch::Timer &tikka) {
 	std::cout << sv << std::setw(5) << tikka.getElapsedMilliseconds() << " milliseconds" << std::endl;
@@ -197,6 +213,81 @@ TEST_CASE("Document") {
 		REQUIRE(0 == doc.document.LineFromPosition(static_cast<int>(sLength)));
 		REQUIRE(doc.document.CanUndo());
 		REQUIRE(!doc.document.CanRedo());
+	}
+
+	SECTION("Style") {
+		// Check that styling calls SetStyles and SetStyleFor modify the correct bytes and
+		// produce a minimal span in the notification.
+		// Also checks the notification mechanism.
+		struct ModificationWatcher : public EmptyWatcher {
+			Sci::Position modPos = -1;
+			Sci::Position modLength = -1;
+			void NotifyModified(Document *, DocModification mh, void *) noexcept final {
+				modPos = mh.position;
+				modLength = mh.length;
+			}
+			void Clear() noexcept {
+				modPos = -1;
+				modLength = -1;
+			}
+		};
+		DocPlus doc(sText, 0);
+		// Length of sText is 9
+		REQUIRE(doc.Styles() == std::string(9, 0));
+		ModificationWatcher mw;
+		doc.document.AddWatcher(&mw, nullptr);
+		doc.document.StartStyling(1);
+		doc.document.SetStyles(5, "\0abc\0");
+		REQUIRE(doc.Styles() == std::string("\0\0abc\0\0\0\0", 9));
+		// The NULs are not changed so are not included in the modification range
+		REQUIRE(mw.modPos == 2);
+		REQUIRE(mw.modLength == 3);
+
+		// No change so no notification so no update
+		mw.Clear();
+		doc.document.StartStyling(1);
+		doc.document.SetStyles(5, "\0abc\0");
+		REQUIRE(mw.modPos == -1);
+		REQUIRE(mw.modLength == -1);
+
+		// Just change one byte
+		doc.document.StartStyling(1);
+		doc.document.SetStyles(5, "\0bbc\0");
+		REQUIRE(mw.modPos == 2);
+		REQUIRE(mw.modLength == 1);
+		REQUIRE(doc.Styles() == std::string("\0\0bbc\0\0\0\0", 9));
+
+		// Move the gap
+		doc.MoveGap(1);
+		doc.document.StartStyling(1);
+		doc.document.SetStyles(5, "\0cbc\0");
+		REQUIRE(mw.modPos == 2);
+		REQUIRE(mw.modLength == 1);
+		REQUIRE(doc.Styles() == std::string("\0\0cbc\0\0\0\0", 9));
+
+		doc.MoveGap(2);
+		doc.document.StartStyling(1);
+		doc.document.SetStyles(5, "\0dcc\0");
+		REQUIRE(mw.modPos == 2);
+		REQUIRE(mw.modLength == 2);
+		REQUIRE(doc.Styles() == std::string("\0\0dcc\0\0\0\0", 9));
+
+		// Test SetStyleFor
+
+		doc.MoveGap(3);
+		doc.document.StartStyling(3);
+		doc.document.SetStyleFor(1, 0);	// After gap
+		REQUIRE(mw.modPos == 3);
+		REQUIRE(mw.modLength == 1);
+		REQUIRE(doc.Styles() == std::string("\0\0d\0c\0\0\0\0", 9));
+
+		doc.document.StartStyling(2);
+		doc.document.SetStyleFor(3, 0);	// Over gap
+		REQUIRE(mw.modPos == 2);
+		REQUIRE(mw.modLength == 3);
+		REQUIRE(doc.Styles() == std::string("\0\0\0\0\0\0\0\0\0", 9));
+
+		doc.document.RemoveWatcher(&mw, nullptr);
 	}
 
 	// Search ranges are from first argument to just before second argument
@@ -728,6 +819,55 @@ TEST_CASE("Document") {
 		REQUIRE(substituted == "\ta\n");
 	}
 
+	SECTION("BraceMatch") {
+		DocPlus doc("{}(()())[]", CpUtf8);
+		constexpr Sci::Position maxReStyle = 0; // unused parameter
+		Sci::Position pos = doc.document.BraceMatch(0, maxReStyle, 0, false);
+		REQUIRE(pos == 1);
+		pos = doc.document.BraceMatch(1, maxReStyle, 0, false);
+		REQUIRE(pos == 0);
+		pos = doc.document.BraceMatch(8, maxReStyle, 0, false);
+		REQUIRE(pos == 9);
+		pos = doc.document.BraceMatch(9, maxReStyle, 0, false);
+		REQUIRE(pos == 8);
+		pos = doc.document.BraceMatch(2, maxReStyle, 0, false);
+		REQUIRE(pos == 7);
+		pos = doc.document.BraceMatch(7, maxReStyle, 0, false);
+		REQUIRE(pos == 2);
+
+		// BraceMatchNext()
+		pos = doc.document.BraceMatch(2, maxReStyle, 3, true);
+		REQUIRE(pos == 7);
+		pos = doc.document.BraceMatch(2, maxReStyle, 4, true);
+		REQUIRE(pos == 4);
+		pos = doc.document.BraceMatch(2, maxReStyle, 5, true);
+		REQUIRE(pos == 7);
+		pos = doc.document.BraceMatch(2, maxReStyle, 6, true);
+		REQUIRE(pos == 6);
+		pos = doc.document.BraceMatch(2, maxReStyle, 7, true);
+		REQUIRE(pos == 7);
+
+		pos = doc.document.BraceMatch(7, maxReStyle, 6, true);
+		REQUIRE(pos == 2);
+		pos = doc.document.BraceMatch(7, maxReStyle, 5, true);
+		REQUIRE(pos == 5);
+		pos = doc.document.BraceMatch(7, maxReStyle, 4, true);
+		REQUIRE(pos == 2);
+		pos = doc.document.BraceMatch(7, maxReStyle, 3, true);
+		REQUIRE(pos == 3);
+		pos = doc.document.BraceMatch(7, maxReStyle, 2, true);
+		REQUIRE(pos == 2);
+	}
+
+	SECTION("BraceMatch DBCS") {
+		DocPlus doc("{\x81}\x81{}", 932); // { U+00B1 U+FF0B }
+		constexpr Sci::Position maxReStyle = 0; // unused parameter
+		Sci::Position pos = doc.document.BraceMatch(0, maxReStyle, 0, false);
+		REQUIRE(pos == 5);
+		pos = doc.document.BraceMatch(5, maxReStyle, 0, false);
+		REQUIRE(pos == 0);
+	}
+
 }
 
 TEST_CASE("DocumentUndo") {
@@ -906,6 +1046,61 @@ TEST_CASE("SafeSegment") {
 		REQUIRE(text[length] == '\xf0');
 	}
 
+	SECTION("UTF-8 Character Fragments") {
+		// PositionCache breaks long texts into fixed length sub-strings that are passed to SafeSegment
+		// so the final character in the sub-string may be incomplete without all needed trail bytes.
+		// For UTF-8, SafeSegment first discards any final bytes that do not represent a valid character
+		// then discards the final whole character.
+
+		const DocPlus doc("", CpUtf8);
+
+		// break before last character after discarding incomplete last character: 0 trail byte
+		std::string_view text = "Japanese\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e\xc2";	// Invalid text as ends with start byte
+		size_t length = doc.document.SafeSegment(text);
+		REQUIRE(text[length - 1] == '\xac');
+		REQUIRE(text[length] == '\xe8');
+		REQUIRE(UTF8IsValid(text.substr(0, length)));
+
+		// break before last character after discarding incomplete last character: 1 trail byte and 2 needed
+		text = "Japanese\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e\xe6\x97";	// Invalid text as ends with only 1 trail byte
+		length = doc.document.SafeSegment(text);
+		REQUIRE(text[length - 1] == '\xac');
+		REQUIRE(text[length] == '\xe8');
+		REQUIRE(UTF8IsValid(text.substr(0, length)));
+	}
+
+	SECTION("UTF-8 Combining Characters") {
+		const DocPlus doc("", CpUtf8);
+
+		// There may be combining characters like accents and tone marks after the
+		// last letter in a sub-string and these may be included in the sub-string
+		// or follow it.
+		// Correct display requires that the combining characters are measured and
+		// drawn with the letter they follow. Thus the final letter and any
+		// following combining characters are discarded.
+
+		// A Thai text example with 8 characters, each taking 3 bytes:
+		// HO HIP, SARA AA, KHO KHAI, MAI THO, O ANG, MO MA, SARA UU, LO LING
+		// Most are letters (Lo) but 2 characters are modifiers (Mn):
+		// MAI THO is a tone mark and SARA UU is a vowel.
+		const std::string_view text = "\xe0\xb8\xab\xe0\xb8\xb2\xe0\xb8\x82\xe0\xb9\x89\xe0\xb8\xad\xe0\xb8\xa1\xe0\xb8\xb9\xe0\xb8\xa5";
+		REQUIRE(text.length() == 8 * 3);
+		size_t length = doc.document.SafeSegment(text);
+		REQUIRE(length == (8 - 1) * 3);	// Discard last character
+
+		// Remove last character (letter LO LING) then run again.
+		// Should skip past SARA UU combining vowel mark to discard letter MO MA and SARA UU.
+		const std::string_view textWithoutLoLing = text.substr(0, length);
+		length = doc.document.SafeSegment(textWithoutLoLing);
+		REQUIRE(length == (8 - 3) * 3);	// Discard 2 characters
+
+		// Remove last character SARA UU combining vowel mark then run again
+		// Final letter may have following combining mark so discard producing same text as previous step.
+		const std::string_view textWithoutSaraUu = text.substr(0, (8 - 2) * 3);
+		length = doc.document.SafeSegment(textWithoutSaraUu);
+		REQUIRE(length == (8 - 3) * 3);	// Discard 1 character
+	}
+
 	SECTION("DBCS Shift-JIS") {
 		const DocPlus doc("", 932);
 		// word and punctuation boundary in middle of text: single byte
@@ -949,6 +1144,137 @@ TEST_CASE("SafeSegment") {
 		length = doc.document.SafeSegment(text);
 		REQUIRE(text[length - 1] == '\x7b');
 		REQUIRE(text[length] == '\x8c');
+	}
+}
+
+TEST_CASE("DiscardLastCombinedCharacter") {
+	SECTION("Short") {
+		const std::string_view base = "12345";
+		// Short strings (up to 4 bytes) aren't changed to avoid null and problematic results
+		for (size_t len = 0; len < 5; len++) {
+			std::string_view text = base.substr(0, len);
+			REQUIRE(text.length() == len);
+			const bool changed = DiscardLastCombinedCharacter(text);
+			REQUIRE(!changed);
+			REQUIRE(text.length() == len);
+		}
+	}
+
+	SECTION("ASCII") {
+		std::string_view text = "12345";
+		REQUIRE(text.length() == 5);
+		const bool changed = DiscardLastCombinedCharacter(text);
+		REQUIRE(changed);
+		REQUIRE(text.length() == 4);
+	}
+
+	SECTION("Control") {
+		{
+			std::string_view text = "12345\007";
+			REQUIRE(text.length() == 6);
+			const bool changed = DiscardLastCombinedCharacter(text);
+			REQUIRE(changed);
+			REQUIRE(text.length() == 5);
+		}
+		{
+			std::string_view text = "12345\007Z";
+			REQUIRE(text.length() == 7);
+			const bool changed = DiscardLastCombinedCharacter(text);
+			REQUIRE(changed);
+			REQUIRE(text.length() == 6);
+		}
+	}
+
+	SECTION("Japanese") {
+		std::string_view text = "Japanese\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e";
+		REQUIRE(text.length() == 17);
+		const bool changed = DiscardLastCombinedCharacter(text);
+		REQUIRE(changed);
+		REQUIRE(text.length() == 14);
+	}
+
+	SECTION("Thai Combining") {
+		// Ends with two combined characters
+		// 7 characters, 5 base characters and 2 combining
+		// HO HIP, SARA AA, KHO KHAI, MAI THO, O ANG, MO MA, SARA UU
+		std::string_view text = "\xe0\xb8\xab\xe0\xb8\xb2\xe0\xb8\x82\xe0\xb9\x89\xe0\xb8\xad\xe0\xb8\xa1\xe0\xb8\xb9";
+		REQUIRE(text.length() == 21);
+		const bool changed = DiscardLastCombinedCharacter(text);
+		REQUIRE(changed);
+		// Discarded 2 x 3-byte characters
+		REQUIRE(text.length() == 15);
+	}
+
+	SECTION("Invalid UTF-8") {
+		{
+			// Ends with isolated lead byte
+			std::string_view text = "1234\xe0";
+			REQUIRE(text.length() == 5);
+			const bool changed = DiscardLastCombinedCharacter(text);
+			REQUIRE(changed);
+			// Discarded final invalid byte
+			REQUIRE(text.length() == 4);
+		}
+		{
+			// Ends with isolated trail byte
+			std::string_view text = "1234\xb8";
+			REQUIRE(text.length() == 5);
+			const bool changed = DiscardLastCombinedCharacter(text);
+			REQUIRE(changed);
+			// Discarded final invalid byte
+			REQUIRE(text.length() == 4);
+		}
+		{
+			// Ends with lead byte and only one of two required trail bytes
+			std::string_view text = "1234\xe0\xb8";
+			REQUIRE(text.length() == 6);
+			const bool changed = DiscardLastCombinedCharacter(text);
+			REQUIRE(changed);
+			// Discarded final invalid byte
+			REQUIRE(text.length() == 5);
+		}
+	}
+
+	SECTION("Private Use UTF-8") {
+		{
+			// Ends with private use area U+F8FF - Apple uses for apple symbol.
+			std::string_view text = "1234\xEF\xA3\xBF";
+			REQUIRE(text.length() == 7);
+			const bool changed = DiscardLastCombinedCharacter(text);
+			REQUIRE(changed);
+			// Discarded whole final character
+			REQUIRE(text.length() == 4);
+		}
+		{
+			// At end: PUA + letter: PUA acts as base
+			std::string_view text = "1234\xEF\xA3\xBFZ";
+			REQUIRE(text.length() == 8);
+			const bool changed = DiscardLastCombinedCharacter(text);
+			REQUIRE(changed);
+			// Discarded just final character
+			REQUIRE(text.length() == 7);
+		}
+	}
+
+	SECTION("Surrogates") {
+		{
+			// Ends with surrogate U+D800.
+			std::string_view text = "1234\xED\xA0\x80";
+			REQUIRE(text.length() == 7);
+			const bool changed = DiscardLastCombinedCharacter(text);
+			REQUIRE(changed);
+			// Discarded final invalid byte
+			REQUIRE(text.length() == 6);
+		}
+		{
+			// Ends with surrogate U+DC00.
+			std::string_view text = "1234\xED\xB0\x80";
+			REQUIRE(text.length() == 7);
+			const bool changed = DiscardLastCombinedCharacter(text);
+			REQUIRE(changed);
+			// Discarded final invalid byte
+			REQUIRE(text.length() == 6);
+		}
 	}
 }
 

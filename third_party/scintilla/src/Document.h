@@ -42,7 +42,7 @@ public:
 		return (start == other.start) && (end == other.end);
 	}
 
-	bool Valid() const noexcept {
+	[[nodiscard]] bool Valid() const noexcept {
 		return (start != Sci::invalidPosition) && (end != Sci::invalidPosition);
 	}
 
@@ -51,40 +51,38 @@ public:
 	}
 
 	[[nodiscard]] Sci::Position Length() const noexcept {
-		return (start <= end) ? (end - start) : (start - end);
+		return std::abs(end - start);
 	}
 
-	Sci::Position First() const noexcept {
+	[[nodiscard]] Sci::Position First() const noexcept {
 		return (start <= end) ? start : end;
 	}
 
-	Sci::Position Last() const noexcept {
+	[[nodiscard]] Sci::Position Last() const noexcept {
 		return (start > end) ? start : end;
 	}
 
 	// Is the position within the range?
-	bool Contains(Sci::Position pos) const noexcept {
+	[[nodiscard]] bool Contains(Sci::Position pos) const noexcept {
 		if (start < end) {
 			return (pos >= start && pos <= end);
-		} else {
-			return (pos <= start && pos >= end);
 		}
+		return (pos <= start && pos >= end);
 	}
 
 	// Is the character after pos within the range?
-	bool ContainsCharacter(Sci::Position pos) const noexcept {
+	[[nodiscard]] bool ContainsCharacter(Sci::Position pos) const noexcept {
 		if (start < end) {
 			return (pos >= start && pos < end);
-		} else {
-			return (pos < start && pos >= end);
 		}
+		return (pos < start && pos >= end);
 	}
 
-	bool Contains(Range other) const noexcept {
+	[[nodiscard]] bool Contains(Range other) const noexcept {
 		return Contains(other.start) && Contains(other.end);
 	}
 
-	bool Overlaps(Range other) const noexcept {
+	[[nodiscard]] bool Overlaps(Range other) const noexcept {
 		return
 		Contains(other.start) ||
 		Contains(other.end) ||
@@ -121,21 +119,39 @@ struct StyledText {
 	}
 	// Return number of bytes from start to before '\n' or end of text.
 	// Return 1 when start is outside text
-	size_t LineLength(size_t start) const noexcept {
+	[[nodiscard]] size_t LineLength(size_t start) const noexcept {
 		size_t cur = start;
 		while ((cur < length) && (text[cur] != '\n'))
 			cur++;
 		return cur-start;
 	}
-	size_t StyleAt(size_t i) const noexcept {
+	[[nodiscard]] size_t StyleAt(size_t i) const noexcept {
 		return multipleStyles ? styles[i] : style;
+	}
+	[[nodiscard]] std::string_view AsView() const noexcept {
+		return { text, length };
 	}
 };
 
 class HighlightDelimiter {
+	bool isEnabled = false;
+	Sci::Line beginFoldBlock = -1;	// Begin of current fold block
+	Sci::Line endFoldBlock = -1;	// End of current fold block
+	Sci::Line firstChangeableLineBefore = -1;	// First line that triggers repaint before starting line that determined current fold block
+	Sci::Line firstChangeableLineAfter = -1;	// First line that triggers repaint after starting line that determined current fold block
 public:
-	HighlightDelimiter() noexcept : isEnabled(false) {
-		Clear();
+	HighlightDelimiter() noexcept = default;
+
+	void SetEnabled(bool isEnabled_) noexcept {
+		isEnabled = isEnabled_;
+	}
+
+	void Set(Sci::Line beginFoldBlock_, Sci::Line endFoldBlock_, Sci::Line firstChangeableLineBefore_,
+		Sci::Line firstChangeableLineAfter_) noexcept {
+		beginFoldBlock = beginFoldBlock_;
+		endFoldBlock = endFoldBlock_;
+		firstChangeableLineBefore = firstChangeableLineBefore_;
+		firstChangeableLineAfter = firstChangeableLineAfter_;
 	}
 
 	void Clear() noexcept {
@@ -145,32 +161,46 @@ public:
 		firstChangeableLineAfter = -1;
 	}
 
-	bool NeedsDrawing(Sci::Line line) const noexcept {
+	[[nodiscard]] bool IsEnabled() const noexcept {
+		return isEnabled;
+	}
+
+	[[nodiscard]] bool NeedsDrawing(Sci::Line line) const noexcept {
 		return isEnabled && (line <= firstChangeableLineBefore || line >= firstChangeableLineAfter);
 	}
 
-	bool IsFoldBlockHighlighted(Sci::Line line) const noexcept {
+	[[nodiscard]] bool IsFoldBlockHighlighted(Sci::Line line) const noexcept {
 		return isEnabled && beginFoldBlock != -1 && beginFoldBlock <= line && line <= endFoldBlock;
 	}
 
-	bool IsHeadOfFoldBlock(Sci::Line line) const noexcept {
+	[[nodiscard]] bool IsHeadOfFoldBlock(Sci::Line line) const noexcept {
 		return beginFoldBlock == line && line < endFoldBlock;
 	}
 
-	bool IsBodyOfFoldBlock(Sci::Line line) const noexcept {
+	[[nodiscard]] bool IsBodyOfFoldBlock(Sci::Line line) const noexcept {
 		return beginFoldBlock != -1 && beginFoldBlock < line && line < endFoldBlock;
 	}
 
-	bool IsTailOfFoldBlock(Sci::Line line) const noexcept {
+	[[nodiscard]] bool IsTailOfFoldBlock(Sci::Line line) const noexcept {
 		return beginFoldBlock != -1 && beginFoldBlock < line && line == endFoldBlock;
 	}
-
-	Sci::Line beginFoldBlock;	// Begin of current fold block
-	Sci::Line endFoldBlock;	// End of current fold block
-	Sci::Line firstChangeableLineBefore;	// First line that triggers repaint before starting line that determined current fold block
-	Sci::Line firstChangeableLineAfter;	// First line that triggers repaint after starting line that determined current fold block
-	bool isEnabled;
 };
+
+// Base class for view state that can be held and transferred without understanding the contents.
+// Declared here but real implementation subclass declared in EditModel
+struct ViewState {
+	ViewState() noexcept = default;
+	// Deleted so ViewState objects can not be copied
+	ViewState(const ViewState &) = delete;
+	ViewState(ViewState &&) = delete;
+	ViewState &operator=(const ViewState &) = delete;
+	ViewState &operator=(ViewState &&) = delete;
+	virtual ~ViewState() noexcept = default;
+
+	virtual void TruncateUndo(int index)=0;
+};
+
+using ViewStateShared = std::shared_ptr<ViewState>;
 
 struct LexerReleaser {
 	// Called by unique_ptr to destroy/free the Resource
@@ -206,7 +236,7 @@ public:
 	void SetInstance(ILexer5 *instance_) noexcept;
 	void Colourise(Sci::Position start, Sci::Position end);
 	virtual Scintilla::LineEndType LineEndTypesSupported();
-	bool UseContainerLexing() const noexcept;
+	[[nodiscard]] bool UseContainerLexing() const noexcept;
 };
 
 struct RegexError : public std::runtime_error {
@@ -230,8 +260,8 @@ class ActionDuration {
 public:
 	ActionDuration(double duration_, double minDuration_, double maxDuration_) noexcept;
 	void AddSample(size_t numberActions, double durationOfActions) noexcept;
-	double Duration() const noexcept;
-	size_t ActionsInAllowedTime(double secondsAllowed) const noexcept;
+	[[nodiscard]] double Duration() const noexcept;
+	[[nodiscard]] size_t ActionsInAllowedTime(double secondsAllowed) const noexcept;
 };
 
 /**
@@ -257,6 +287,8 @@ struct CharacterExtracted {
 	}
 };
 
+bool DiscardLastCombinedCharacter(std::string_view &text) noexcept;
+
 /**
  */
 class Document : PerLine, public Scintilla::IDocument, public Scintilla::ILoader, public Scintilla::IDocumentEditable {
@@ -264,9 +296,9 @@ class Document : PerLine, public Scintilla::IDocument, public Scintilla::ILoader
 public:
 	/** Used to pair watcher pointer with user data. */
 	struct WatcherWithUserData {
-		DocWatcher *watcher;
-		void *userData;
-		WatcherWithUserData(DocWatcher *watcher_=nullptr, void *userData_=nullptr) noexcept :
+		DocWatcher *watcher = nullptr;
+		void *userData = nullptr;
+		WatcherWithUserData(DocWatcher *watcher_, void *userData_) noexcept :
 			watcher(watcher_), userData(userData_) {
 		}
 		bool operator==(const WatcherWithUserData &other) const noexcept {
@@ -301,9 +333,10 @@ private:
 	LineAnnotation *Annotations() const noexcept;
 	LineAnnotation *EOLAnnotations() const noexcept;
 
-	bool matchesValid;
 	std::unique_ptr<RegexSearchBase> regex;
 	std::unique_ptr<LexInterface> pli;
+
+	std::map<void *, ViewStateShared>viewData;
 
 public:
 
@@ -321,7 +354,7 @@ public:
 
 	std::unique_ptr<IDecorationList> decorations;
 
-	Document(Scintilla::DocumentOption options);
+	explicit Document(Scintilla::DocumentOption options);
 	// Deleted so Document objects can not be copied.
 	Document(const Document &) = delete;
 	Document(Document &&) = delete;
@@ -350,6 +383,7 @@ public:
 	int SCI_METHOD DEVersion() const noexcept override;
 
 	void SCI_METHOD SetErrorStatus(int status) override;
+	void CheckPosition(Sci::Position pos) const;
 
 	Sci_Position SCI_METHOD LineFromPosition(Sci_Position pos) const override;
 	Sci::Line SciLineFromPosition(Sci::Position pos) const noexcept;	// Avoids casting LineFromPosition
@@ -370,6 +404,7 @@ public:
 	bool SCI_METHOD IsDBCSLeadByte(char ch) const override;
 	bool IsDBCSLeadByteNoExcept(char ch) const noexcept;
 	bool IsDBCSTrailByteNoExcept(char ch) const noexcept;
+	unsigned char DBCSMinTrailByte() const noexcept;
 	int DBCSDrawBytes(std::string_view text) const noexcept;
 	bool IsDBCSDualByteAt(Sci::Position pos) const noexcept;
 	size_t SafeSegment(std::string_view text) const noexcept;
@@ -396,8 +431,9 @@ public:
 	}
 	bool IsCollectingUndo() const noexcept { return cb.IsCollectingUndo(); }
 	void BeginUndoAction(bool coalesceWithPrior=false) noexcept { cb.BeginUndoAction(coalesceWithPrior); }
-	void EndUndoAction() noexcept { cb.EndUndoAction(); }
+	void EndUndoAction() noexcept;
 	int UndoSequenceDepth() const noexcept;
+	bool AfterUndoSequenceStart() const noexcept { return cb.AfterUndoSequenceStart(); }
 	void AddUndoAction(Sci::Position token, bool mayCoalesce) { cb.AddUndoAction(token, mayCoalesce); }
 	void SetSavePoint();
 	bool IsSavePoint() const noexcept { return cb.IsSavePoint(); }
@@ -434,13 +470,14 @@ public:
 
 	int SCI_METHOD GetLineIndentation(Sci_Position line) override;
 	Sci::Position SetLineIndentation(Sci::Line line, Sci::Position indent);
-	Sci::Position GetLineIndentPosition(Sci::Line line) const;
-	Sci::Position GetColumn(Sci::Position pos) const;
+	Sci::Position GetLineIndentPosition(Sci::Line line) const noexcept;
+	Sci::Position GetColumn(Sci::Position pos) const noexcept;
 	Sci::Position CountCharacters(Sci::Position startPos, Sci::Position endPos) const noexcept;
 	Sci::Position CountUTF16(Sci::Position startPos, Sci::Position endPos) const noexcept;
-	Sci::Position FindColumn(Sci::Line line, Sci::Position column);
+	Sci::Position FindColumn(Sci::Line line, Sci::Position column) const noexcept;
 	void Indent(bool forwards, Sci::Line lineBottom, Sci::Line lineTop);
-	static std::string TransformLineEnds(const char *s, size_t len, Scintilla::EndOfLine eolModeWanted);
+	static std::string TransformLineEnds(std::string_view s, Scintilla::EndOfLine eolModeWanted);
+	[[deprecated]]static std::string TransformLineEnds(const char *s, size_t len, Scintilla::EndOfLine eolModeWanted);
 	void ConvertLineEnds(Scintilla::EndOfLine eolModeSet);
 	std::string_view EOLString() const noexcept;
 	void SetReadOnly(bool set) noexcept { cb.SetReadOnly(set); }
@@ -534,6 +571,10 @@ public:
 	LexInterface *GetLexInterface() const noexcept;
 	void SetLexInterface(std::unique_ptr<LexInterface> pLexInterface) noexcept;
 
+	void SetViewState(void *view, ViewStateShared pVSS);
+	ViewStateShared GetViewState(void *view) const noexcept;
+	void TruncateUndoComments(int action);
+
 	int SCI_METHOD SetLineState(Sci_Position line, int state) override;
 	int SCI_METHOD GetLineState(Sci_Position line) const override;
 	Sci::Line GetMaxLineState() const noexcept;
@@ -574,6 +615,7 @@ public:
 private:
 	void NotifyModifyAttempt();
 	void NotifySavePoint(bool atSavePoint);
+	void NotifyGroupCompleted() noexcept;
 	void NotifyModified(DocModification mh);
 };
 
@@ -581,7 +623,7 @@ class UndoGroup {
 	Document *pdoc;
 	bool groupNeeded;
 public:
-	UndoGroup(Document *pdoc_, bool groupNeeded_=true) noexcept :
+	explicit UndoGroup(Document *pdoc_, bool groupNeeded_=true) noexcept :
 		pdoc(pdoc_), groupNeeded(groupNeeded_) {
 		if (groupNeeded) {
 			pdoc->BeginUndoAction();
@@ -600,7 +642,7 @@ public:
 			pdoc->EndUndoAction();
 		}
 	}
-	bool Needed() const noexcept {
+	[[nodiscard]] bool Needed() const noexcept {
 		return groupNeeded;
 	}
 };
@@ -623,9 +665,10 @@ public:
 	Scintilla::FoldLevel foldLevelPrev;
 	Sci::Line annotationLinesAdded;
 	Sci::Position token;
+	Sci::Position newPos = -1;	/**< Reasonable new caret position after undo or redo. */
 
-	DocModification(Scintilla::ModificationFlags modificationType_, Sci::Position position_=0, Sci::Position length_=0,
-		Sci::Line linesAdded_=0, const char *text_=nullptr, Sci::Line line_=0) noexcept :
+	explicit DocModification(Scintilla::ModificationFlags modificationType_, Sci::Position position_=0, Sci::Position length_=0,
+		Sci::Line linesAdded_=0, const char *text_=nullptr, Sci::Line line_=0, Sci::Position newPos_=-1) noexcept :
 		modificationType(modificationType_),
 		position(position_),
 		length(length_),
@@ -635,7 +678,8 @@ public:
 		foldLevelNow(Scintilla::FoldLevel::None),
 		foldLevelPrev(Scintilla::FoldLevel::None),
 		annotationLinesAdded(0),
-		token(0) {}
+		token(0),
+		newPos(newPos_) {}
 
 	DocModification(Scintilla::ModificationFlags modificationType_, const Action &act, Sci::Line linesAdded_=0) noexcept :
 		modificationType(modificationType_),
@@ -656,7 +700,7 @@ public:
  */
 class DocWatcher {
 public:
-	virtual ~DocWatcher() {}
+	virtual ~DocWatcher() = default;
 
 	virtual void NotifyModifyAttempt(Document *doc, void *userData) = 0;
 	virtual void NotifySavePoint(Document *doc, void *userData, bool atSavePoint) = 0;
@@ -664,6 +708,7 @@ public:
 	virtual void NotifyDeleted(Document *doc, void *userData) noexcept = 0;
 	virtual void NotifyStyleNeeded(Document *doc, void *userData, Sci::Position endPos) = 0;
 	virtual void NotifyErrorOccurred(Document *doc, void *userData, Scintilla::Status status) = 0;
+	virtual void NotifyGroupCompleted(Document *doc, void *userData) noexcept = 0;
 };
 
 }

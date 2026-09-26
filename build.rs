@@ -17,6 +17,18 @@ fn main() {
     let lexilla_lexers = lexilla.join("lexers");
     let lexilla_src = lexilla.join("src");
 
+    // Header changes must rebuild the static libraries as well as source edits.
+    for directory in [
+        base.join("include"),
+        src.clone(),
+        win32.clone(),
+        lexilla_include.clone(),
+        lexilla_lexlib.clone(),
+        lexilla_src.clone(),
+    ] {
+        println!("cargo:rerun-if-changed={}", directory.display());
+    }
+
     let mut build = cc::Build::new();
     build.cpp(true);
     build.warnings(false);
@@ -77,7 +89,14 @@ fn main() {
         build.file(path);
     }
 
-    let win32_files = ["HanjaDic.cxx", "PlatWin.cxx", "ScintillaWin.cxx"];
+    let win32_files = [
+        "HanjaDic.cxx",
+        "PlatWin.cxx",
+        "ListBox.cxx",
+        "SurfaceGDI.cxx",
+        "SurfaceD2D.cxx",
+        "ScintillaWin.cxx",
+    ];
     for file in win32_files {
         let path = win32.join(file);
         println!("cargo:rerun-if-changed={}", path.display());
@@ -196,7 +215,11 @@ fn emit_build_metadata() {
 }
 
 fn emit_git_rerun_instructions() {
-    println!("cargo:rerun-if-changed=.git");
+    // Watching a .git directory rebuilds all C++ after status/fetch/index changes.
+    // A worktree's .git file, however, can change its repository location.
+    if Path::new(".git").is_file() {
+        println!("cargo:rerun-if-changed=.git");
+    }
 
     let Some(git_dir) = resolve_git_dir(Path::new(".git")) else {
         return;
@@ -205,8 +228,13 @@ fn emit_git_rerun_instructions() {
     let head_path = git_dir.join("HEAD");
     println!("cargo:rerun-if-changed={}", head_path.display());
 
-    let packed_refs = git_dir.join("packed-refs");
-    println!("cargo:rerun-if-changed={}", packed_refs.display());
+    let common_dir = fs::read_to_string(git_dir.join("commondir"))
+        .map(|relative| git_dir.join(relative.trim()))
+        .unwrap_or_else(|_| git_dir.clone());
+    let packed_refs = common_dir.join("packed-refs");
+    if packed_refs.exists() {
+        println!("cargo:rerun-if-changed={}", packed_refs.display());
+    }
 
     let Ok(head_contents) = fs::read_to_string(&head_path) else {
         return;
@@ -215,10 +243,10 @@ fn emit_git_rerun_instructions() {
         return;
     };
 
-    println!(
-        "cargo:rerun-if-changed={}",
-        git_dir.join(reference).display()
-    );
+    let reference = common_dir.join(reference);
+    if reference.exists() {
+        println!("cargo:rerun-if-changed={}", reference.display());
+    }
 }
 
 fn resolve_git_dir(dot_git: &Path) -> Option<PathBuf> {

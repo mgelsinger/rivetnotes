@@ -3,6 +3,9 @@ Scintilla notice for Rivet
 
 Rivet bundles Scintilla source code from `third_party/scintilla`.
 Upstream project: https://www.scintilla.org/
+Vendored version: 5.6.6
+Source archive: https://www.scintilla.org/scintilla566.zip
+Archive SHA-256: a0c0cdf1cf226dc6252020ce9a87a939a8b615e65269db40ac9123b28fa20a9d
 
 License for Lexilla, Scintilla, and SciTE
 

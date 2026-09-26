@@ -254,7 +254,18 @@ impl Controller {
         let mut finished = false;
         let ready_message = self.ready_message();
         if let Some(worker) = &self.worker {
-            while let Ok(event) = worker.events.try_recv() {
+            loop {
+                let event = match worker.events.try_recv() {
+                    Ok(event) => event,
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        if !finished && worker.manual && !worker.cancel.load(Ordering::Relaxed) {
+                            self.status = "Could not check for updates - try later".into();
+                        }
+                        finished = true;
+                        break;
+                    }
+                };
                 if worker.cancel.load(Ordering::Relaxed) {
                     finished |= matches!(event, Event::Done(_));
                     continue;
@@ -829,6 +840,29 @@ mod tests {
         assert!(!check_due(100, 100 + DAY - 1));
         assert!(check_due(100, 100 + DAY));
         assert!(check_due(100, 99));
+    }
+
+    #[test]
+    fn disconnected_worker_does_not_leave_checks_permanently_busy() {
+        let (sender, receiver) = mpsc::channel();
+        drop(sender);
+        let mut controller = Controller {
+            installation: None,
+            enabled: false,
+            started: Instant::now(),
+            inspected_cache: true,
+            ready: None,
+            status: "Checking for updates...".into(),
+            worker: Some(Worker {
+                events: receiver,
+                cancel: Arc::new(AtomicBool::new(false)),
+                manual: true,
+            }),
+        };
+        controller.poll();
+        assert!(controller.worker.is_none());
+        assert!(!controller.ready());
+        assert!(controller.status().contains("try later"));
     }
 
     #[test]

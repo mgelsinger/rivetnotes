@@ -72,10 +72,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS, WM_ACTIVATEAPP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE,
     WM_COMMAND, WM_CONTEXTMENU, WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORDLG,
     WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DROPFILES,
-    WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP, WM_KEYDOWN, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT, WM_SETCURSOR,
-    WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WPF_RESTORETOMAXIMIZED, WS_BORDER, WS_CAPTION,
-    WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    WM_ENDSESSION, WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP, WM_KEYDOWN,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT,
+    WM_QUERYENDSESSION, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW,
+    WPF_RESTORETOMAXIMIZED, WS_BORDER, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW,
+    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::PWSTR;
 use windows::core::{HSTRING, PCWSTR, w};
@@ -364,7 +365,10 @@ struct FindHit {
 
 enum FindResult {
     Match(FindHit),
-    Done,
+    Done {
+        truncated: bool,
+        skipped_lines: usize,
+    },
 }
 
 struct FindInFilesState {
@@ -382,6 +386,12 @@ struct FindInFilesState {
     receiver: Option<Receiver<FindResult>>,
     running: bool,
     hits: Vec<FindHit>,
+}
+
+impl Drop for FindInFilesState {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::SeqCst);
+    }
 }
 
 struct AboutDetails {
@@ -427,6 +437,9 @@ impl TabStripHost {
 struct AppState {
     updates: UpdateController,
     close_checkpoint_saved: bool,
+    discard_on_exit: Vec<uuid::Uuid>,
+    unrestored_entries: Vec<session::SessionEntry>,
+    snapshot_retry_at: Option<Instant>,
     spelling_worker: Option<SpellingWorker>,
     spelling_error: Option<String>,
     spelling_notify_error: bool,
@@ -2243,9 +2256,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if cds.is_null() {
                 return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
             }
-            let (dw_data, bytes) = unsafe {
+            let bytes = unsafe {
                 let cds = &*cds;
-                let bytes = if cds.lpData.is_null() || cds.cbData == 0 {
+                if cds.dwData != single_instance::COPYDATA_OPEN_FILES
+                    || cds.cbData as usize > single_instance::MAX_COPYDATA_BYTES
+                    || !cds.cbData.is_multiple_of(2)
+                    || (cds.cbData > 0 && cds.lpData.is_null())
+                {
+                    return LRESULT(0);
+                }
+                if cds.lpData.is_null() || cds.cbData == 0 {
                     Vec::new()
                 } else {
                     // Copy out immediately; lpData is only valid while the
@@ -2253,12 +2273,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     // foreign pointer has no alignment guarantee.
                     std::slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize)
                         .to_vec()
-                };
-                (cds.dwData, bytes)
+                }
             };
-            if dw_data != single_instance::COPYDATA_OPEN_FILES {
-                return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
-            }
             let units: Vec<u16> = bytes
                 .as_chunks::<2>()
                 .0
@@ -2291,6 +2307,49 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 && let Err(err) = check_external_change(hwnd, state)
             {
                 show_error("Rivet error", &err.to_string());
+            }
+            LRESULT(0)
+        }
+        WM_QUERYENDSESSION => {
+            let Some(state) = get_state(hwnd) else {
+                return LRESULT(1);
+            };
+            let result = can_exit(hwnd, state).and_then(|ready| {
+                if ready {
+                    save_session_checkpoint_with_discard(hwnd, state, &state.discard_on_exit)?;
+                }
+                Ok(ready)
+            });
+            match result {
+                Ok(ready) => LRESULT(isize::from(ready)),
+                Err(error) => {
+                    logging::log_error(&format!("shutdown_checkpoint_failed: {error}"));
+                    LRESULT(0)
+                }
+            }
+        }
+        WM_ENDSESSION => {
+            if let Some(state) = get_state(hwnd) {
+                if wparam.0 != 0 {
+                    let result = if state.session_snapshot_periodic_backup {
+                        run_snapshot_tick(hwnd, state, true)
+                    } else {
+                        save_session_checkpoint_with_discard(hwnd, state, &state.discard_on_exit)
+                    };
+                    if let Err(error) = result {
+                        logging::log_error(&format!("final_shutdown_checkpoint_failed: {error}"));
+                    }
+                    state.close_checkpoint_saved = true;
+                    // Windows shutdown must not start an installer or relaunch.
+                    let _ = unsafe { DestroyWindow(hwnd) };
+                } else {
+                    state.discard_on_exit.clear();
+                    if let Err(error) = save_session_checkpoint(hwnd, state) {
+                        logging::log_error(&format!(
+                            "cancelled_shutdown_checkpoint_failed: {error}"
+                        ));
+                    }
+                }
             }
             LRESULT(0)
         }
@@ -2502,6 +2561,9 @@ fn create_children(hwnd: HWND, instance: HINSTANCE) -> Result<AppState> {
     let state = AppState {
         updates: UpdateController::new(ui_settings.automatic_updates),
         close_checkpoint_saved: false,
+        discard_on_exit: Vec::new(),
+        unrestored_entries: Vec::new(),
+        snapshot_retry_at: None,
         spelling_worker: None,
         spelling_error: None,
         spelling_notify_error: false,
@@ -2887,7 +2949,17 @@ fn save_document_at(
         let normalized = document::normalize_eol(&text, doc_tab.doc.eol);
         let bytes = document::encode_text(&normalized, encoding)?;
 
-        std::fs::write(&path, &bytes)
+        // Follow an existing link instead of replacing the link itself.
+        let destination = if path
+            .try_exists()
+            .map_err(|err| AppError::new(err.to_string()))?
+        {
+            path.canonicalize()
+                .map_err(|err| AppError::new(err.to_string()))?
+        } else {
+            path.clone()
+        };
+        crate::storage::atomic_write::atomic_write_bytes(&destination, &bytes)
             .map_err(|err| AppError::new(format!("Failed to write file: {err}")))?;
 
         let stamp = document::FileStamp::from_path(&path)?;
@@ -2928,7 +3000,6 @@ fn save_document_at(
         doc_tab.doc.is_dirty = false;
         doc_tab.change_counter = doc_tab.change_counter.saturating_add(1);
         doc_tab.last_backup_change_counter = None;
-        doc_tab.doc.first_backup_write = None;
         doc_tab.doc.last_backup_write = None;
         doc_tab.doc.backup_path.clone()
     };
@@ -3123,6 +3194,9 @@ fn update_status(state: &AppState) {
             flags.push_str(" | ");
         }
         flags.push_str(message);
+    }
+    if state.snapshot_retry_at.is_some() {
+        flags = "Recovery failed - save notes".into();
     }
 
     set_status_part_text(state.status, 0, &format!("Ln {line}, Col {col}"));
@@ -3894,6 +3968,12 @@ fn start_find_in_files(hwnd: HWND, state: &mut AppState) -> Result<()> {
         regex: is_checked(dialog.regex),
         recurse: is_checked(dialog.recurse),
     };
+    let regex = compile_find_regex(&options)?;
+
+    // Each search owns its cancellation flag. Restarting must not revive the
+    // previous worker while replacing its receiver.
+    dialog.cancel.store(true, Ordering::SeqCst);
+    dialog.cancel = Arc::new(AtomicBool::new(false));
 
     dialog.hits.clear();
     unsafe {
@@ -3902,13 +3982,19 @@ fn start_find_in_files(hwnd: HWND, state: &mut AppState) -> Result<()> {
 
     let (tx, rx) = mpsc::channel();
     dialog.receiver = Some(rx);
-    dialog.cancel.store(false, Ordering::SeqCst);
     dialog.running = true;
 
     let cancel = dialog.cancel.clone();
-    std::thread::spawn(move || {
-        run_find_in_files(options, tx, cancel);
-    });
+    if let Err(error) = std::thread::Builder::new()
+        .name("rivet-find-files".into())
+        .spawn(move || {
+            run_find_in_files(options, regex, tx, cancel);
+        })
+    {
+        dialog.running = false;
+        dialog.receiver = None;
+        return Err(AppError::new(format!("Could not start search: {error}")));
+    }
 
     unsafe {
         let _ = SetTimer(hwnd, TIMER_FIND_RESULTS, 100, None);
@@ -3933,7 +4019,8 @@ fn poll_find_results(hwnd: HWND, state: &mut AppState) {
         None => return,
     };
 
-    loop {
+    // Yield to editing/painting even when a search produces many matches.
+    for _ in 0..100 {
         match receiver.try_recv() {
             Ok(FindResult::Match(hit)) => {
                 let label = format!("{}({}): {}", hit.path.display(), hit.line, hit.text);
@@ -3948,7 +4035,26 @@ fn poll_find_results(hwnd: HWND, state: &mut AppState) {
                     );
                 }
             }
-            Ok(FindResult::Done) => {
+            Ok(FindResult::Done {
+                truncated,
+                skipped_lines,
+            }) => {
+                if truncated || skipped_lines > 0 {
+                    let message = format!(
+                        "Search limits: {} matches shown; {} lines over 1 MiB skipped. Narrow the search for more results.",
+                        dialog.hits.len(),
+                        skipped_lines
+                    );
+                    let wide: Vec<u16> = message.encode_utf16().chain(Some(0)).collect();
+                    unsafe {
+                        SendMessageW(
+                            dialog.results,
+                            LB_ADDSTRING,
+                            WPARAM(0),
+                            LPARAM(wide.as_ptr() as isize),
+                        );
+                    }
+                }
                 dialog.running = false;
                 dialog.receiver = None;
                 unsafe {
@@ -4021,28 +4127,36 @@ struct FindInFilesOptions {
     recurse: bool,
 }
 
+const MAX_FIND_RESULTS: usize = 10_000;
+const MAX_FIND_LINE_BYTES: usize = 1024 * 1024;
+
+fn compile_find_regex(options: &FindInFilesOptions) -> Result<Option<regex::Regex>> {
+    if !options.regex {
+        return Ok(None);
+    }
+    let pattern = if options.whole_word {
+        format!(r"\b(?:{})\b", options.find_text)
+    } else {
+        options.find_text.clone()
+    };
+    RegexBuilder::new(&pattern)
+        .case_insensitive(!options.match_case)
+        .build()
+        .map(Some)
+        .map_err(|error| AppError::new(format!("Invalid search expression: {error}")))
+}
+
 fn run_find_in_files(
     options: FindInFilesOptions,
+    regex: Option<regex::Regex>,
     sender: mpsc::Sender<FindResult>,
     cancel: Arc<AtomicBool>,
 ) {
-    let regex = if options.regex {
-        let pattern = if options.whole_word {
-            format!(r"\b(?:{})\b", options.find_text)
-        } else {
-            options.find_text.clone()
-        };
-        RegexBuilder::new(&pattern)
-            .case_insensitive(!options.match_case)
-            .build()
-            .ok()
-    } else {
-        None
-    };
-
+    let mut matches = 0;
+    let mut skipped_lines = 0;
     let mut stack = vec![options.folder.clone()];
-    while let Some(dir) = stack.pop() {
-        if cancel.load(Ordering::SeqCst) {
+    'folders: while let Some(dir) = stack.pop() {
+        if cancel.load(Ordering::SeqCst) || matches >= MAX_FIND_RESULTS {
             break;
         }
         let entries = match std::fs::read_dir(&dir) {
@@ -4050,11 +4164,19 @@ fn run_find_in_files(
             Err(_) => continue,
         };
         for entry in entries.flatten() {
-            if cancel.load(Ordering::SeqCst) {
-                break;
+            if cancel.load(Ordering::SeqCst) || matches >= MAX_FIND_RESULTS {
+                break 'folders;
             }
             let path = entry.path();
-            if path.is_dir() {
+            use std::os::windows::fs::MetadataExt;
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            // Includes junctions and symbolic links; never recurse through them.
+            if metadata.file_attributes() & 0x400 != 0 {
+                continue;
+            }
+            if metadata.is_dir() {
                 if options.recurse {
                     stack.push(path);
                 }
@@ -4066,11 +4188,59 @@ fn run_find_in_files(
             if matches_patterns(&options.exclude, &path, false) {
                 continue;
             }
-            search_file(&path, &options, &regex, &sender, &cancel);
+            if !metadata.is_file() {
+                continue;
+            }
+            search_file(
+                &path,
+                &options,
+                &regex,
+                &sender,
+                &cancel,
+                &mut matches,
+                &mut skipped_lines,
+            );
         }
     }
 
-    let _ = sender.send(FindResult::Done);
+    let _ = sender.send(FindResult::Done {
+        truncated: matches >= MAX_FIND_RESULTS,
+        skipped_lines,
+    });
+}
+
+/// Read or skip a complete physical line without allocating for an unbounded
+/// line. Cancellation is observed between the reader's bounded buffer fills.
+fn read_find_line(
+    reader: &mut impl BufRead,
+    buffer: &mut Vec<u8>,
+    cancel: &AtomicBool,
+) -> std::io::Result<Option<bool>> {
+    buffer.clear();
+    let mut oversized = false;
+    let mut read_any = false;
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok(read_any.then_some(!oversized));
+        }
+        let newline = available.iter().position(|&byte| byte == b'\n');
+        let count = newline.map_or(available.len(), |position| position + 1);
+        read_any = true;
+        if !oversized && buffer.len() + count <= MAX_FIND_LINE_BYTES {
+            buffer.extend_from_slice(&available[..count]);
+        } else {
+            oversized = true;
+            buffer.clear();
+        }
+        reader.consume(count);
+        if newline.is_some() {
+            return Ok(Some(!oversized));
+        }
+    }
 }
 
 fn search_file(
@@ -4079,6 +4249,8 @@ fn search_file(
     regex: &Option<regex::Regex>,
     sender: &mpsc::Sender<FindResult>,
     cancel: &Arc<AtomicBool>,
+    matches: &mut usize,
+    skipped_lines: &mut usize,
 ) {
     let file = match std::fs::File::open(path) {
         Ok(file) => file,
@@ -4090,17 +4262,18 @@ fn search_file(
     let mut first_line = true;
 
     loop {
-        if cancel.load(Ordering::SeqCst) {
+        if cancel.load(Ordering::SeqCst) || *matches >= MAX_FIND_RESULTS {
             break;
         }
-        buffer.clear();
-        let read = match reader.read_until(b'\n', &mut buffer) {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(_) => break,
-        };
-        if read == 0 {
-            break;
+        match read_find_line(&mut reader, &mut buffer, cancel) {
+            Ok(Some(true)) => {}
+            Ok(Some(false)) => {
+                *skipped_lines += 1;
+                line_no += 1;
+                first_line = false;
+                continue;
+            }
+            _ => break,
         }
         if first_line {
             first_line = false;
@@ -4112,11 +4285,18 @@ fn search_file(
         let line_trimmed = line.trim_end_matches(&['\r', '\n'][..]);
         if line_matches(line_trimmed, options, regex) {
             let preview = trim_preview(line_trimmed);
-            let _ = sender.send(FindResult::Match(FindHit {
-                path: path.clone(),
-                line: line_no,
-                text: preview,
-            }));
+            if sender
+                .send(FindResult::Match(FindHit {
+                    path: path.clone(),
+                    line: line_no,
+                    text: preview,
+                }))
+                .is_err()
+            {
+                cancel.store(true, Ordering::SeqCst);
+                break;
+            }
+            *matches += 1;
         }
         line_no += 1;
     }
@@ -4190,9 +4370,13 @@ fn format_thousands(value: usize) -> String {
 }
 
 fn trim_preview(line: &str) -> String {
-    let mut out = line.trim().to_string();
-    if out.len() > 200 {
-        out.truncate(200);
+    let text = line.trim();
+    let mut end = text.len().min(200);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut out = text[..end].to_string();
+    if end < text.len() {
         out.push_str("...");
     }
     out
@@ -4219,25 +4403,24 @@ fn matches_patterns(patterns: &[String], path: &Path, include_if_empty: bool) ->
 }
 
 fn wildcard_match(pattern: &str, text: &str) -> bool {
-    let p: Vec<char> = pattern.chars().collect();
     let t: Vec<char> = text.chars().collect();
-    let mut dp = vec![vec![false; t.len() + 1]; p.len() + 1];
-    dp[0][0] = true;
-    for i in 1..=p.len() {
-        if p[i - 1] == '*' {
-            dp[i][0] = dp[i - 1][0];
-        }
-    }
-    for i in 1..=p.len() {
+    // One row bounds memory to the filename length, regardless of pattern size.
+    let mut dp = vec![false; t.len() + 1];
+    dp[0] = true;
+    for token in pattern.chars() {
+        let mut diagonal = dp[0];
+        dp[0] &= token == '*';
         for j in 1..=t.len() {
-            if p[i - 1] == '*' {
-                dp[i][j] = dp[i - 1][j] || dp[i][j - 1];
-            } else if p[i - 1] == '?' || p[i - 1] == t[j - 1] {
-                dp[i][j] = dp[i - 1][j - 1];
-            }
+            let previous = dp[j];
+            dp[j] = if token == '*' {
+                previous || dp[j - 1]
+            } else {
+                diagonal && (token == '?' || token == t[j - 1])
+            };
+            diagonal = previous;
         }
     }
-    dp[p.len()][t.len()]
+    dp[t.len()]
 }
 
 fn module_instance() -> Result<HINSTANCE> {
@@ -4510,7 +4693,13 @@ fn handle_spellcheck_timer(state: &mut AppState) {
     if !state.ui_settings.spellcheck_enabled {
         return;
     }
-    if state.spelling_worker.is_none() && state.spelling_error.is_none() {
+    if state.spelling_worker.is_none()
+        && state.spelling_error.is_none()
+        && state
+            .docs
+            .get(state.active)
+            .is_some_and(|doc| spelling_mode(doc, true).is_some())
+    {
         state.spelling_worker = Some(SpellingWorker::start());
     }
     while let Some(event) = state
@@ -4645,6 +4834,10 @@ fn handle_spellcheck_timer(state: &mut AppState) {
 #[cfg(test)]
 #[path = "spellcheck_tests.rs"]
 mod spellcheck_tests;
+
+#[cfg(test)]
+#[path = "safety_tests.rs"]
+mod safety_tests;
 
 /// Debounce a markdown fold recompute. Recomputing on every keystroke walks
 /// the whole document, so we coalesce edits behind a short timer and only act
@@ -4861,7 +5054,6 @@ fn load_file_into_doc(
         .to_string();
     doc_tab.doc.is_dirty = false;
     doc_tab.sticky_dirty = false;
-    doc_tab.doc.first_backup_write = None;
     doc_tab.doc.last_backup_write = None;
     doc_tab.change_counter = 0;
     doc_tab.last_backup_change_counter = None;
@@ -5660,40 +5852,52 @@ fn set_dirty(state: &mut AppState, index: usize, dirty: bool) {
 }
 
 fn confirm_close_all(hwnd: HWND, state: &mut AppState) -> Result<bool> {
+    confirm_close_all_with_prompt(hwnd, state, prompt_save_changes)
+}
+
+fn confirm_close_all_with_prompt(
+    hwnd: HWND,
+    state: &mut AppState,
+    mut prompt: impl FnMut(HWND, &DocTab) -> SaveChoice,
+) -> Result<bool> {
+    state.discard_on_exit.clear();
+    let mut discarded = Vec::new();
     for index in 0..state.docs.len() {
         let doc_tab = &state.docs[index];
         if !state.session_snapshot_periodic_backup && doc_tab.doc.is_dirty {
-            match prompt_save_changes(hwnd, doc_tab) {
+            match prompt(hwnd, doc_tab) {
                 SaveChoice::Yes => match save_document_at(hwnd, state, index, None, false)? {
                     true => {}
                     false => return Ok(false),
                 },
-                SaveChoice::No => {}
+                SaveChoice::No => discarded.push(doc_tab.doc.id),
                 SaveChoice::Cancel => return Ok(false),
             }
         }
     }
+    state.discard_on_exit = discarded;
     Ok(true)
 }
 
 fn close_tab(hwnd: HWND, state: &mut AppState, index: usize) -> Result<bool> {
+    close_tab_with_prompt(hwnd, state, index, prompt_save_changes)
+}
+
+fn close_tab_with_prompt(
+    hwnd: HWND,
+    state: &mut AppState,
+    index: usize,
+    prompt: impl FnOnce(HWND, &DocTab) -> SaveChoice,
+) -> Result<bool> {
     if index >= state.docs.len() {
         return Ok(true);
     }
 
-    if state.session_snapshot_periodic_backup
-        && state
-            .docs
-            .get(index)
-            .is_some_and(|doc_tab| doc_tab.doc.is_dirty)
-    {
-        backup_doc_at_index(state, index, true)?;
-    }
-
     let should_close = {
         let doc_tab = &state.docs[index];
-        if !state.session_snapshot_periodic_backup && doc_tab.doc.is_dirty {
-            match prompt_save_changes(hwnd, doc_tab) {
+        // Closing a tab removes its recovery snapshot, unlike closing the app.
+        if doc_tab.doc.is_dirty {
+            match prompt(hwnd, doc_tab) {
                 SaveChoice::Yes => match save_document_at(hwnd, state, index, None, false) {
                     Ok(true) => true,
                     Ok(false) => return Ok(false),
@@ -5856,7 +6060,12 @@ fn apply_saved_window_placement(hwnd: HWND, placement: &session::WindowPlacement
 fn restore_session(hwnd: HWND, mut state: AppState) -> Result<AppState> {
     let snapshot = match session::load_session() {
         Ok(snapshot) => snapshot,
-        Err(_) => return Ok(state),
+        Err(error) => {
+            logging::log_error(&format!("session_load_failed: {error}"));
+            // Keep the existing snapshot intact if recovery could not be read
+            // or preserved. Startup must not replace it with an empty session.
+            return Err(error);
+        }
     };
 
     state.remember_session = snapshot.remember_session;
@@ -5871,9 +6080,7 @@ fn restore_session(hwnd: HWND, mut state: AppState) -> Result<AppState> {
     }
 
     for entry in snapshot.entries {
-        if let Err(err) = restore_session_entry(hwnd, &mut state, entry) {
-            logging::log_error(&format!("session_restore_entry_failed err={err}"));
-        }
+        restore_or_preserve_entry(hwnd, &mut state, entry);
     }
 
     if !state.docs.is_empty() {
@@ -5887,6 +6094,22 @@ fn restore_session(hwnd: HWND, mut state: AppState) -> Result<AppState> {
     }
 
     Ok(state)
+}
+
+fn restore_or_preserve_entry(hwnd: HWND, state: &mut AppState, entry: session::SessionEntry) {
+    if let Err(error) = restore_session_entry(hwnd, state, entry.clone()) {
+        logging::log_error(&format!(
+            "session_restore_entry_failed tab={} err={error}",
+            entry.id
+        ));
+        // A temporarily unreadable backup must not disappear from the next
+        // checkpoint just because its editor could not be created this time.
+        state.unrestored_entries.push(entry);
+        set_status_message(
+            state,
+            "Some notes could not be restored; preserved for the next launch. See logs.",
+        );
+    }
 }
 
 fn restore_session_entry(
@@ -5928,8 +6151,8 @@ fn restore_session_entry(
         session::RestoreSource::Backup => {
             let bytes = std::fs::read(&entry.backup_path)
                 .map_err(|err| AppError::new(format!("Failed to read backup file: {err}")))?;
-            let text = String::from_utf8(bytes.clone()).or_else(|_| {
-                document::decode_bytes(&bytes)
+            let text = String::from_utf8(bytes).or_else(|error| {
+                document::decode_bytes(error.as_bytes())
                     .map(|(decoded, _)| decoded)
                     .map_err(|err| AppError::new(format!("Failed to decode backup file: {err}")))
             })?;
@@ -5948,10 +6171,21 @@ fn restore_session_entry(
                 .unwrap_or_else(|| {
                     document::is_large_file_size(
                         state.ui_settings.large_file_threshold_mb,
-                        bytes.len() as u64,
+                        text.len() as u64,
                     )
                 });
-            (text, TextEncoding::Utf8, stamp, large)
+            // Backups contain UTF-8 editor text, not the disk file's encoding.
+            // Older snapshots lack this field, so infer from the original file.
+            let encoding = entry
+                .encoding
+                .or_else(|| {
+                    let bytes = std::fs::read(entry.path.as_ref()?).ok()?;
+                    document::decode_bytes(&bytes)
+                        .ok()
+                        .map(|(_, encoding)| encoding)
+                })
+                .unwrap_or(TextEncoding::Utf8);
+            (text, encoding, stamp, large)
         }
         session::RestoreSource::Skip => return Ok(()),
     };
@@ -5974,13 +6208,14 @@ fn restore_session_entry(
     doc.backup_path = entry.backup_path;
     doc.is_dirty = entry.is_dirty;
     doc.encoding = encoding;
-    doc.encoding_hint = Some(encoding);
-    doc.eol = document::detect_eol(&text);
+    doc.eol = if restore_source == session::RestoreSource::Backup {
+        entry.eol.unwrap_or_else(|| document::detect_eol(&text))
+    } else {
+        document::detect_eol(&text)
+    };
     doc.stamp = stamp;
     doc.large_file_mode = large_file_mode;
     doc.cursor_pos = entry.cursor_pos;
-    doc.scroll_pos = 0;
-    doc.first_backup_write = None;
     doc.last_backup_write = entry.backup_timestamp.map(unix_millis_to_system_time);
     ensure_doc_backup_path(&mut doc)?;
 
@@ -6053,6 +6288,14 @@ fn capture_window_placement(hwnd: HWND) -> Option<session::WindowPlacementData> 
 }
 
 fn save_session_checkpoint(hwnd: HWND, state: &AppState) -> Result<()> {
+    save_session_checkpoint_with_discard(hwnd, state, &[])
+}
+
+fn save_session_checkpoint_with_discard(
+    hwnd: HWND,
+    state: &AppState,
+    discarded: &[uuid::Uuid],
+) -> Result<()> {
     if !state.remember_session {
         let mut data = session::SessionData::empty();
         data.remember_session = false;
@@ -6066,19 +6309,25 @@ fn save_session_checkpoint(hwnd: HWND, state: &AppState) -> Result<()> {
         return session::save_session(&data);
     }
 
-    let mut entries = Vec::new();
+    let mut entries = state.unrestored_entries.clone();
     for doc_tab in &state.docs {
+        let discard = discarded.contains(&doc_tab.doc.id);
+        if discard && doc_tab.doc.path.is_none() {
+            continue;
+        }
         let backup_path = if doc_tab.doc.backup_path.as_os_str().is_empty() {
             session::backup_path_for_id(doc_tab.doc.id)?
         } else {
             doc_tab.doc.backup_path.clone()
         };
         entries.push(session::SessionEntry {
+            encoding: Some(doc_tab.doc.encoding),
+            eol: Some(doc_tab.doc.eol),
             id: doc_tab.doc.id,
             path: doc_tab.doc.path.clone(),
             display_name: tab_base_name(doc_tab),
             backup_path,
-            is_dirty: doc_tab.doc.is_dirty,
+            is_dirty: doc_tab.doc.is_dirty && !discard,
             cursor_pos: scintilla::get_current_pos(doc_tab.editor) as i64,
             backup_timestamp: doc_tab.doc.last_backup_write.map(session::unix_timestamp),
             disk_timestamp_at_backup: doc_tab
@@ -6103,14 +6352,31 @@ fn save_session_checkpoint(hwnd: HWND, state: &AppState) -> Result<()> {
 }
 
 fn run_snapshot_tick(hwnd: HWND, state: &mut AppState, final_pass: bool) -> Result<()> {
-    if state.session_snapshot_periodic_backup {
-        backup_dirty_documents(state, final_pass)?;
+    if !final_pass
+        && state
+            .snapshot_retry_at
+            .is_some_and(|retry| Instant::now() < retry)
+    {
+        return Ok(());
     }
-    if state.remember_session {
-        save_session_checkpoint(hwnd, state)
-    } else {
+    let result = (|| {
+        if state.session_snapshot_periodic_backup {
+            backup_dirty_documents(state, final_pass)?;
+        }
+        if state.remember_session {
+            save_session_checkpoint(hwnd, state)?;
+        }
         Ok(())
+    })();
+    let previously_failed = state.snapshot_retry_at.is_some();
+    state.snapshot_retry_at = result
+        .as_ref()
+        .err()
+        .map(|_| Instant::now() + Duration::from_secs(60));
+    if previously_failed != state.snapshot_retry_at.is_some() {
+        update_status(state);
     }
+    result
 }
 
 fn backup_dirty_documents(state: &mut AppState, force: bool) -> Result<()> {
@@ -6139,15 +6405,13 @@ fn backup_doc_at_index(state: &mut AppState, index: usize, force: bool) -> Resul
     doc_tab.doc.cursor_pos = scintilla::get_current_pos(doc_tab.editor) as i64;
     let text = scintilla::get_text(doc_tab.editor)?;
     let timestamp = session::write_backup(&doc_tab.doc.backup_path, text.as_bytes())?;
-    if doc_tab.doc.first_backup_write.is_none() {
-        doc_tab.doc.first_backup_write = Some(timestamp);
-    }
     doc_tab.doc.last_backup_write = Some(timestamp);
     doc_tab.last_backup_change_counter = Some(doc_tab.change_counter);
     Ok(())
 }
 
 fn can_exit(hwnd: HWND, state: &mut AppState) -> Result<bool> {
+    state.discard_on_exit.clear();
     if state.session_snapshot_periodic_backup {
         run_snapshot_tick(hwnd, state, true)?;
         return Ok(true);
@@ -6240,25 +6504,32 @@ fn request_app_close(hwnd: HWND, restart: bool) {
         }
         Ok(true) => {}
     }
-    if restart || state.updates.install_on_exit() {
-        if let Err(error) = save_session_checkpoint(hwnd, state) {
-            logging::log_error(&format!("update_checkpoint_failed: {error}"));
+    // Every close, including a non-updating close, must commit the final session
+    // before destroying editors. Discard choices only affect this snapshot.
+    if let Err(error) = save_session_checkpoint_with_discard(hwnd, state, &state.discard_on_exit) {
+        logging::log_error(&format!("update_checkpoint_failed: {error}"));
+        if restart || state.updates.install_on_exit() {
             state
                 .updates
                 .report("Update postponed - could not save session");
             update_status(state);
+        } else {
+            show_error("Rivet error", &error.to_string());
+        }
+        return;
+    }
+    if (restart || state.updates.install_on_exit())
+        && let Err(error) = state.updates.handoff(restart)
+    {
+        logging::log_error(&format!("update_handoff_failed: {error}"));
+        if restart {
+            let _ = save_session_checkpoint(hwnd, state);
+            state.updates.report("Could not start update - try later");
+            update_status(state);
             return;
         }
-        if let Err(error) = state.updates.handoff(restart) {
-            logging::log_error(&format!("update_handoff_failed: {error}"));
-            if restart {
-                state.updates.report("Could not start update - try later");
-                update_status(state);
-                return;
-            }
-        }
-        state.close_checkpoint_saved = true;
     }
+    state.close_checkpoint_saved = true;
     let _ = unsafe { DestroyWindow(hwnd) };
 }
 
@@ -8557,7 +8828,9 @@ unsafe extern "system" fn find_in_files_wndproc(
                 let code = hiword(wparam.0) as u32;
                 match id {
                     IDC_FIF_FIND => {
-                        let _ = start_find_in_files(main_hwnd, state);
+                        if let Err(error) = start_find_in_files(main_hwnd, state) {
+                            show_error("Find in Files", &error.to_string());
+                        }
                     }
                     IDC_FIF_CANCEL => {
                         cancel_find_in_files(state);
@@ -8655,6 +8928,13 @@ mod tests {
         assert!(wildcard_match("*.txt", "notes.txt"));
         assert!(wildcard_match("r?vet.*", "rivet.log"));
         assert!(!wildcard_match("*.rs", "main.c"));
+        assert!(wildcard_match("", ""));
+        assert!(wildcard_match("***", ""));
+        assert!(!wildcard_match("?", ""));
+        assert!(wildcard_match("*a*b?", "aaabc"));
+        assert!(!wildcard_match("*a*b?", "aaabcc"));
+        assert!(wildcard_match("caf?.*", "café.txt"));
+        assert!(!wildcard_match("*ab", "aba"));
     }
 
     #[test]
@@ -8703,6 +8983,79 @@ mod tests {
         assert_eq!(trimmed.len(), 203);
         assert!(trimmed.ends_with("..."));
         assert_eq!(trim_preview("  hello  "), "hello");
+    }
+
+    #[test]
+    fn search_preview_preserves_unicode_boundaries() {
+        for character in ['é', '中', '\u{1f600}'] {
+            let text = format!("{}{}tail", "a".repeat(199), character);
+            assert_eq!(trim_preview(&text), format!("{}...", "a".repeat(199)));
+        }
+    }
+
+    #[test]
+    fn search_line_limit_skips_without_losing_the_next_line() {
+        let text = format!("{}\nnext\n", "x".repeat(MAX_FIND_LINE_BYTES + 100));
+        let mut reader = std::io::BufReader::with_capacity(4096, std::io::Cursor::new(text));
+        let mut buffer = Vec::new();
+        let cancel = AtomicBool::new(false);
+        assert_eq!(
+            read_find_line(&mut reader, &mut buffer, &cancel).unwrap(),
+            Some(false)
+        );
+        assert!(buffer.capacity() <= MAX_FIND_LINE_BYTES);
+        assert_eq!(
+            read_find_line(&mut reader, &mut buffer, &cancel).unwrap(),
+            Some(true)
+        );
+        assert_eq!(buffer, b"next\n");
+        cancel.store(true, Ordering::SeqCst);
+        assert_eq!(
+            read_find_line(&mut reader, &mut buffer, &cancel).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn invalid_search_regex_is_rejected_instead_of_becoming_literal() {
+        let mut options = make_options("[");
+        options.regex = true;
+        assert!(compile_find_regex(&options).is_err());
+        options.regex = false;
+        assert!(compile_find_regex(&options).unwrap().is_none());
+    }
+
+    #[test]
+    fn file_search_caps_results_and_stops_after_receiver_disconnects() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("many.txt"),
+            "match\n".repeat(MAX_FIND_RESULTS + 1),
+        )
+        .unwrap();
+        let mut options = make_options("match");
+        options.folder = temp.path().to_path_buf();
+        let (sender, receiver) = mpsc::channel();
+        run_find_in_files(
+            options.clone(),
+            None,
+            sender,
+            Arc::new(AtomicBool::new(false)),
+        );
+        let results: Vec<_> = receiver.try_iter().collect();
+        assert_eq!(results.len(), MAX_FIND_RESULTS + 1);
+        assert!(matches!(
+            results.last(),
+            Some(FindResult::Done {
+                truncated: true,
+                skipped_lines: 0
+            })
+        ));
+        let (sender, receiver) = mpsc::channel();
+        drop(receiver);
+        let cancel = Arc::new(AtomicBool::new(false));
+        run_find_in_files(options, None, sender, cancel.clone());
+        assert!(cancel.load(Ordering::SeqCst));
     }
 
     #[test]

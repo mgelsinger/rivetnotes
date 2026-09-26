@@ -260,6 +260,13 @@ class TestSimple(unittest.TestCase):
 		self.assertEqual(self.ed.CanUndo(), 0)
 		self.ed.UndoCollection = 1
 
+	def testDragDrop(self):
+		self.assertEqual(self.ed.DragDropEnabled, 1)
+		self.ed.DragDropEnabled = 0
+		self.assertEqual(self.ed.DragDropEnabled, 0)
+		self.ed.DragDropEnabled = 1
+		self.assertEqual(self.ed.DragDropEnabled, 1)
+
 	def testGetColumn(self):
 		self.ed.AddText(1, b"x")
 		self.assertEqual(self.ed.GetColumn(0), 0)
@@ -312,6 +319,24 @@ class TestSimple(unittest.TestCase):
 		self.assertEqual(self.ed.Contents(), b"\tx\tb")
 		self.assertEqual(self.ed.GetLineIndentPosition(0), 1)
 
+	def testRectangularIndent(self):
+		self.ed.VirtualSpaceOptions = 3
+		self.ed.AddText(3, b"\n\n\n")
+		self.ed.RectangularSelectionAnchor = 2
+		self.ed.RectangularSelectionCaret = 0
+		self.ed.TabIndents = 0
+		self.ed.UseTabs = 1
+		self.ed.Tab()
+		self.assertEqual(self.ed.Contents(), b"\t\n\t\n\t\n")
+		self.assertEqual(self.ed.GetSelectionSerialized(), b'T#2,5-1')
+		self.assertEqual(self.ed.GetSelectionNAnchor(0), 5)
+		self.assertEqual(self.ed.GetSelectionNCaret(0), 5)
+		self.assertEqual(self.ed.GetSelectionNAnchor(1), 3)
+		self.assertEqual(self.ed.GetSelectionNCaret(1), 3)
+		self.assertEqual(self.ed.GetSelectionNAnchor(2), 1)
+		self.assertEqual(self.ed.GetSelectionNCaret(2), 1)
+		self.ed.VirtualSpaceOptions = 0
+
 	def testGetCurLine(self):
 		self.ed.AddText(1, b"x")
 		data = ctypes.create_string_buffer(b"\0" * 100)
@@ -345,6 +370,12 @@ class TestSimple(unittest.TestCase):
 			self.ed.ConvertEOLs(lineEndType)
 			self.assertEqual(self.ed.Contents(), b"x" + lineEnds[lineEndType] + b"y")
 			self.assertEqual(self.ed.LineLength(0), 1 + len(lineEnds[lineEndType]))
+
+	def testLineEndConversionLengthening(self):
+		# Bug #2501
+		self.ed.AddText(4, b"x\ny\n")
+		self.ed.ConvertEOLs(self.ed.SC_EOL_CRLF)
+		self.assertEqual(self.ed.Contents(), b"x\r\ny\r\n")
 
 	# Several tests for unicode line ends U+2028 and U+2029
 
@@ -1949,6 +1980,28 @@ class TestMultiSelection(unittest.TestCase):
 		self.assertEqual(self.ed.GetSelectionNStart(0), 2)
 		self.assertEqual(self.ed.GetSelectionNEnd(0), 3)
 
+		self.ed.SetSelectionNStart(0, 1)
+		self.assertEqual(self.ed.GetSelectionNAnchor(0), 1)
+		self.assertEqual(self.ed.GetSelectionNCaret(0), 3)
+		self.assertEqual(self.ed.GetSelectionNStart(0), 1)
+		self.assertEqual(self.ed.GetSelectionNEnd(0), 3)
+
+		self.ed.SetSelectionNAnchor(0, 2)
+		self.ed.SetSelectionNCaret(0, 2)
+		self.ed.SetSelectionNStart(0, 9)
+		self.assertEqual(self.ed.GetSelectionNAnchor(0), 9)
+		self.assertEqual(self.ed.GetSelectionNCaret(0), 9)
+		self.assertEqual(self.ed.GetSelectionNStart(0), 9)
+		self.assertEqual(self.ed.GetSelectionNEnd(0), 9)
+
+		self.ed.SetSelectionNAnchor(0, 2)
+		self.ed.SetSelectionNCaret(0, 3)
+		self.ed.SetSelectionNStart(0, 9)
+		self.assertEqual(self.ed.GetSelectionNAnchor(0), 9)
+		self.assertEqual(self.ed.GetSelectionNCaret(0), 9)
+		self.assertEqual(self.ed.GetSelectionNStart(0), 9)
+		self.assertEqual(self.ed.GetSelectionNEnd(0), 9)
+
 	def test2Selections(self):
 		self.ed.SetSelection(1, 2)
 		self.ed.AddSelection(4, 5)
@@ -2241,6 +2294,39 @@ class TestMultiSelection(unittest.TestCase):
 		self.assertEqual(selectionRepresentation(self.ed, 0), "3-4")
 		self.assertEqual(self.ed.Contents(), b'a    1')
 		self.assertEqual(self.textOfSelection(0), b' ')
+
+	def testSelectionSerialization(self):
+		self.ed.SetContents(b"a")
+		self.ed.SetSelection(0, 1)
+		self.assertEqual(self.ed.GetSelectionSerialized(), b'1-0')
+		self.ed.SetSelection(1, 1)
+		self.assertEqual(self.ed.GetSelectionSerialized(), b'1')
+		self.ed.SetSelectionNAnchorVirtualSpace(0, 2)
+		self.ed.SetSelectionNCaretVirtualSpace(0, 3)
+		self.assertEqual(selectionRepresentation(self.ed, 0), "1+2v-1+3v")
+		self.assertEqual(self.textOfSelection(0), b'')
+		self.assertEqual(self.ed.GetSelectionSerialized(), b'1v2-1v3')
+		self.ed.SetSelectionSerialized(0, b'1-0')
+		self.assertEqual(self.ed.MainSelection, 0)
+		self.assertEqual(self.ed.Anchor, 1)
+		self.assertEqual(self.ed.CurrentPos, 0)
+		self.assertEqual(self.ed.GetSelectionNAnchor(0), 1)
+		self.assertEqual(self.ed.GetSelectionNCaret(0), 0)
+
+	def testSelectionSerializationOutOfBounds(self):
+		# Try setting selections that extend past document end through serialized form
+		# and check that the selection is limited to the document.
+		self.ed.SetContents(b"a")
+		self.ed.SetSelectionSerialized(0, b'200-0')
+		self.assertEqual(self.ed.GetSelectionSerialized(), b'1-0')
+		
+		# Retain virtual space
+		self.ed.SetSelectionSerialized(0, b'0v1-200')
+		self.assertEqual(self.ed.GetSelectionSerialized(), b'0v1-1')
+
+		# Drop identical ranges, but touching empty range survives
+		self.ed.SetSelectionSerialized(0, b'0-200,300-400,500-600')
+		self.assertEqual(self.ed.GetSelectionSerialized(), b'0-1,1')
 
 
 class TestModalSelection(unittest.TestCase):
@@ -3155,6 +3241,7 @@ class TestAutoComplete(unittest.TestCase):
 		self.assertEqual(self.ed.AutoCGetIgnoreCase(), 0)
 		self.assertEqual(self.ed.AutoCGetAutoHide(), 1)
 		self.assertEqual(self.ed.AutoCGetDropRestOfWord(), 0)
+		self.assertEqual(self.ed.AutoCGetImageScale(), 100)
 
 	def testChangeDefaults(self):
 		self.ed.AutoCSetSeparator(ord('-'))
@@ -3188,6 +3275,10 @@ class TestAutoComplete(unittest.TestCase):
 		self.ed.AutoCSetStyle(13)
 		self.assertEqual(self.ed.AutoCGetStyle(), 13)
 		self.ed.AutoCSetStyle(self.ed.STYLE_DEFAULT)
+
+		self.ed.AutoCSetImageScale(200)
+		self.assertEqual(self.ed.AutoCGetImageScale(), 200)
+		self.ed.AutoCSetImageScale(100)
 
 	def testAutoShow(self):
 		self.assertEqual(self.ed.AutoCActive(), 0)

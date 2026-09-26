@@ -203,6 +203,7 @@ pub fn settings_file_path() -> Result<PathBuf> {
 
 pub fn load_settings() -> Result<UiSettings> {
     ensure_settings_dir()?;
+    let _ = cleanup_stale_temp_files(&session::data_dir()?, Duration::from_secs(7 * 24 * 60 * 60));
     let path = settings_file_path()?;
     if !path.exists() {
         return Ok(UiSettings::default());
@@ -225,7 +226,6 @@ fn ensure_settings_dir() -> Result<()> {
     let dir = session::data_dir()?;
     std::fs::create_dir_all(&dir)
         .map_err(|err| AppError::new(format!("Failed to create settings directory: {err}")))?;
-    let _ = cleanup_stale_temp_files(&dir, Duration::from_secs(7 * 24 * 60 * 60));
     Ok(())
 }
 

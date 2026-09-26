@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TextEncoding {
     Utf8,
     Utf8Bom,
@@ -29,7 +30,7 @@ impl TextEncoding {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Eol {
     Crlf,
     Lf,
@@ -62,11 +63,8 @@ pub struct Document {
     pub display_name: String,
     pub is_dirty: bool,
     pub backup_path: PathBuf,
-    pub first_backup_write: Option<SystemTime>,
     pub last_backup_write: Option<SystemTime>,
     pub cursor_pos: i64,
-    pub scroll_pos: i64,
-    pub encoding_hint: Option<TextEncoding>,
     pub encoding: TextEncoding,
     pub eol: Eol,
     pub stamp: Option<FileStamp>,
@@ -85,11 +83,8 @@ impl Document {
             display_name: "new 001".to_string(),
             is_dirty: false,
             backup_path: PathBuf::new(),
-            first_backup_write: None,
             last_backup_write: None,
             cursor_pos: 0,
-            scroll_pos: 0,
-            encoding_hint: None,
             encoding: TextEncoding::Utf8,
             eol: Eol::Crlf,
             stamp: None,
@@ -107,7 +102,6 @@ impl Document {
     ) {
         self.path = Some(path);
         self.encoding = encoding;
-        self.encoding_hint = Some(encoding);
         self.eol = eol;
         self.stamp = Some(stamp);
         self.large_file_mode = large_file_mode;
@@ -116,7 +110,6 @@ impl Document {
 
     pub fn update_after_save(&mut self, encoding: TextEncoding, eol: Eol, stamp: FileStamp) {
         self.encoding = encoding;
-        self.encoding_hint = Some(encoding);
         self.eol = eol;
         self.stamp = Some(stamp);
         self.is_dirty = false;

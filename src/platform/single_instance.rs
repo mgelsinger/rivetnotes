@@ -25,6 +25,7 @@ const MAIN_WINDOW_CLASS: PCWSTR = w!("rivet_main_window");
 
 /// `COPYDATASTRUCT.dwData` magic ("RVOP") identifying an open-files request.
 pub const COPYDATA_OPEN_FILES: usize = 0x5256_4F50;
+pub const MAX_COPYDATA_BYTES: usize = 1024 * 1024;
 
 const FIND_WINDOW_ATTEMPTS: u32 = 20;
 const FIND_WINDOW_DELAY: Duration = Duration::from_millis(100);
@@ -107,6 +108,10 @@ pub fn forward_to_existing(paths: &[PathBuf]) -> bool {
     }
 
     let buffer = encode_paths(paths);
+    if std::mem::size_of_val(buffer.as_slice()) > MAX_COPYDATA_BYTES {
+        logging::log_error("single-instance: path message exceeds size limit");
+        return false;
+    }
     let cds = COPYDATASTRUCT {
         dwData: COPYDATA_OPEN_FILES,
         cbData: (buffer.len() * std::mem::size_of::<u16>()) as u32,

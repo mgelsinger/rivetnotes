@@ -3,14 +3,14 @@
 
 use super::*;
 
-struct TestData {
+pub(super) struct TestData {
     _directory: tempfile::TempDir,
     local: Option<std::ffi::OsString>,
     roaming: Option<std::ffi::OsString>,
 }
 
 impl TestData {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let directory = tempfile::tempdir().unwrap();
         let local = std::env::var_os("LOCALAPPDATA");
         let roaming = std::env::var_os("APPDATA");
@@ -40,9 +40,9 @@ impl Drop for TestData {
     }
 }
 
-struct TestWindow(HWND);
+pub(super) struct TestWindow(pub(super) HWND);
 
-fn register_test_editor(instance: HINSTANCE) -> Result<()> {
+pub(super) fn register_test_editor(instance: HINSTANCE) -> Result<()> {
     static REGISTERED: std::sync::OnceLock<std::result::Result<(), String>> =
         std::sync::OnceLock::new();
     REGISTERED

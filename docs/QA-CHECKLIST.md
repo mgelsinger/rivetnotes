@@ -1,9 +1,9 @@
 # Manual QA Checklist
 
-A short checklist of UI behaviors that don't have automated test coverage
-(everything inside `src/platform/win32.rs` is Win32 GUI code). Run through
-this before tagging any `v0.x.y` release — the CI workflow only verifies
-`fmt`, `clippy`, `test`, and that the portable zip + installer build.
+A checklist of UI behaviors that still need hands-on coverage before tagging a
+release. CI also checks formatting, linting, dependency advisories, unit tests,
+hidden-window data-safety regressions, and both installer scopes. Automated
+checks do not substitute for visual review or interactive Windows approval.
 
 Companion to `docs/RELEASE_CHECKLIST.md`, which covers packaging and
 signing.
@@ -147,6 +147,23 @@ signing.
 - [ ] `scripts/test-updater-installer.ps1` passes for the release compiler.
 - [ ] In an already elevated test session, the same script with `-Scope Machine`
   passes and keeps the installation in HKLM through both versions.
+
+## Recovery and failure handling
+
+- [ ] Closing a dirty tab asks Save/Discard/Cancel even with snapshots enabled.
+- [ ] With snapshots disabled, choosing Discard for one tab then Cancel for
+  another leaves both buffers intact. Completing exit does not restore discarded
+  untitled tabs on the next launch.
+- [ ] A locked destination rejects Save while keeping both the original file
+  and the edited buffer. Recovery copies named in errors remain available.
+- [ ] UTF-8 BOM, UTF-16 LE/BE, ANSI, and embedded NUL content survive backup,
+  restart, and Save without changing encoding or losing text.
+- [ ] In an isolated test account, actual Windows sign-out with an edited note
+  checkpoints it. Sign-out never starts an updater or relaunches Rivet.
+- [ ] A malformed session is preserved as `session.invalid-<id>.json` and a
+  clear error explains recovery. Temporarily unreadable entries remain indexed.
+- [ ] Find in Files reports invalid regexes and search limits; cancelling or
+  restarting a broad search keeps the UI responsive.
 
 ## Tip
 
