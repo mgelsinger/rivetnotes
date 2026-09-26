@@ -76,10 +76,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TPM_RIGHTBUTTON, TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE,
     WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS, WM_ACTIVATEAPP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE,
     WM_COMMAND, WM_CONTEXTMENU, WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORDLG,
-    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DROPFILES,
-    WM_ENDSESSION, WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP, WM_KEYDOWN,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT,
-    WM_QUERYENDSESSION, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW,
+    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED,
+    WM_DROPFILES, WM_ENDSESSION, WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP,
+    WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY,
+    WM_PAINT, WM_QUERYENDSESSION, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW,
     WPF_RESTORETOMAXIMIZED, WS_BORDER, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW,
     WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
@@ -1527,6 +1527,39 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 && !unsafe { IsIconic(hwnd) }.as_bool()
             {
                 layout_children(hwnd, state);
+            }
+            LRESULT(0)
+        }
+        WM_DPICHANGED if lparam.0 != 0 => {
+            // Adapt the main-window part of PR #25 without its custom toolbar.
+            // SetWindowPos can reenter wndproc, so acquire AppState afterward.
+            let suggested = unsafe { *(lparam.0 as *const RECT) };
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    HWND(0),
+                    suggested.left,
+                    suggested.top,
+                    suggested.right - suggested.left,
+                    suggested.bottom - suggested.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+            if let Ok(instance) = module_instance() {
+                set_window_icons(hwnd, instance);
+            }
+            if let Some(state) = get_state(hwnd) {
+                for doc in &state.docs {
+                    apply_editor_theme_overlays(
+                        doc.editor,
+                        state.editor_dark,
+                        state.line_numbers_enabled,
+                    );
+                }
+                layout_children(hwnd, state);
+                unsafe {
+                    InvalidateRect(hwnd, None, true);
+                }
             }
             LRESULT(0)
         }
