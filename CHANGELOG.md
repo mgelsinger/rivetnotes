@@ -5,7 +5,10 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 ## [Unreleased]
 
-## [0.4.26] - 2026-09-25
+## [0.4.27] - 2026-09-25
+
+Version 0.4.26 was stopped before publication after finding a settings-persistence
+interaction during final review. Its tag is retained; no release was published.
 
 ### Added
 
@@ -20,6 +23,8 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 ### Fixed
 
+- Keep current font, theme, and tab-layout preferences when saving spellcheck
+  changes, update preferences, or the last update-check time.
 - Add successfully saved documents to Recent Files.
 - Preserve open contents without repeated focus errors after external deletion.
 - Keep the preferred vertical-tab width through minimize and temporary resizing.

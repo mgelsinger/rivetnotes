@@ -248,3 +248,50 @@ fn dialogs_retheme_and_find_controls_do_not_overlap() -> Result<()> {
     assert!(checkbox.right <= button.left);
     Ok(())
 }
+
+#[test]
+#[ignore = "Requires Windows controls; verifies shared preference writers"]
+fn spellcheck_and_update_saves_preserve_current_editor_preferences() -> Result<()> {
+    let _lock = session::test_env_lock().lock().unwrap();
+    let _data = TestData::new();
+    let window = window()?;
+    let hwnd = window.0;
+    let assert_preferences = || -> Result<()> {
+        let saved = settings::load_settings()?;
+        assert_eq!(saved.editor_font_name, "Courier New");
+        assert_eq!(saved.editor_font_size, 16);
+        assert!(!saved.editor_dark);
+        assert_eq!(saved.tab_placement, TabPlacement::Right);
+        assert_eq!(saved.vertical_tab_width_px, 320);
+        Ok(())
+    };
+    {
+        let state = get_state(hwnd).unwrap();
+        set_editor_font(state, "Courier New".to_string(), 16);
+        set_editor_dark_mode(hwnd, state, false);
+        state.tab_host.vertical_width_px = 320;
+        set_tab_layout(hwnd, state, TabPlacement::Right);
+        assert_preferences()?;
+
+        toggle_spellcheck(hwnd, state);
+        assert_preferences()?;
+        assert!(settings::load_settings()?.spellcheck_enabled);
+        toggle_spellcheck(hwnd, state);
+        assert_preferences()?;
+        assert!(!settings::load_settings()?.spellcheck_enabled);
+
+        remember_update_check(state, 123);
+        assert_preferences()?;
+        assert_eq!(settings::load_settings()?.last_update_check, 123);
+    }
+    unsafe {
+        SendMessageW(
+            hwnd,
+            WM_COMMAND,
+            WPARAM(IDM_HELP_AUTO_UPDATES as usize),
+            LPARAM(0),
+        );
+    }
+    assert_preferences()?;
+    Ok(())
+}

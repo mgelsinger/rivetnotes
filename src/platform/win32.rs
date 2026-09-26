@@ -2094,7 +2094,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     if let Some(state) = get_state(hwnd) {
                         let enabled =
                             !state.ui_settings.automatic_updates && state.updates.supported();
-                        let mut next = state.ui_settings.clone();
+                        let mut next = current_ui_settings(state);
                         next.automatic_updates = enabled;
                         match settings::save_settings(&next) {
                             Ok(()) => {
@@ -4866,7 +4866,7 @@ fn toggle_spellcheck(hwnd: HWND, state: &mut AppState) {
         clear_spelling(doc.editor, 0);
     }
     update_spellcheck_menu(hwnd, state);
-    if let Err(err) = settings::save_settings(&state.ui_settings) {
+    if let Err(err) = settings::save_settings(&current_ui_settings(state)) {
         show_error("Rivet settings", &err.to_string());
     }
 }
@@ -6661,7 +6661,7 @@ fn can_exit(hwnd: HWND, state: &mut AppState) -> Result<bool> {
 
 fn remember_update_check(state: &mut AppState, timestamp: u64) {
     state.ui_settings.last_update_check = timestamp;
-    if let Err(error) = settings::save_settings(&state.ui_settings) {
+    if let Err(error) = settings::save_settings(&current_ui_settings(state)) {
         logging::log_error(&format!("update_timestamp_save_failed: {error}"));
     }
 }
@@ -7513,14 +7513,20 @@ fn open_recent_file(hwnd: HWND, state: &mut AppState, slot: usize) -> Result<()>
     open_path_new_tab(hwnd, state, path, None, None, None, None)
 }
 
-fn persist_ui_settings(state: &AppState) {
+// Some preferences have live UI fields. Every settings writer must capture
+// these values instead of persisting the older copy loaded at startup.
+fn current_ui_settings(state: &AppState) -> UiSettings {
     let mut settings = state.ui_settings.clone();
     settings.tab_placement = state.tab_host.placement;
     settings.vertical_tab_width_px = state.tab_host.vertical_width_px;
     settings.editor_dark = state.editor_dark;
     settings.editor_font_name = state.editor_font_name.clone();
     settings.editor_font_size = state.editor_font_size;
-    if let Err(err) = settings::save_settings(&settings) {
+    settings
+}
+
+fn persist_ui_settings(state: &AppState) {
+    if let Err(err) = settings::save_settings(&current_ui_settings(state)) {
         logging::log_error(&format!("settings_save_failed err={err}"));
     }
 }
