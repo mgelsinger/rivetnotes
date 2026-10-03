@@ -4,6 +4,490 @@
 use super::safety_tests::window;
 use super::spellcheck_tests::{TestData, TestWindow};
 use super::*;
+use std::cell::Cell;
+use windows::Win32::UI::Controls::{EM_GETSEL, EM_REPLACESEL};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetFocus, GetKeyboardState, IsWindowEnabled, SetKeyboardState,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetDlgItem, IsWindow, LB_GETCOUNT, PM_REMOVE, PeekMessageW, SW_SHOWNOACTIVATE, WM_COPY, WM_CUT,
+    WM_PASTE, WM_QUIT,
+};
+
+struct TestKeyboardState([u8; 256]);
+
+impl TestKeyboardState {
+    fn new(pressed: &[u16]) -> Result<Self> {
+        let mut previous = [0; 256];
+        unsafe { GetKeyboardState(&mut previous)? };
+        let mut state = [0; 256];
+        for &key in pressed {
+            state[key as usize] = 0x80;
+        }
+        // This changes only this test thread's state, without physical input.
+        unsafe { SetKeyboardState(&state)? };
+        Ok(Self(previous))
+    }
+}
+
+impl Drop for TestKeyboardState {
+    fn drop(&mut self) {
+        let _ = unsafe { SetKeyboardState(&self.0) };
+    }
+}
+
+fn keyboard_test_dialog(main: HWND, class: PCWSTR) -> Result<TestWindow> {
+    let hwnd = unsafe {
+        CreateWindowExW(
+            Default::default(),
+            class,
+            w!("Dialog keyboard regression test"),
+            WS_OVERLAPPEDWINDOW,
+            -32000,
+            -32000,
+            520,
+            240,
+            main,
+            HMENU(0),
+            module_instance()?,
+            Some(main.0 as *const std::ffi::c_void),
+        )
+    };
+    assert_ne!(hwnd.0, 0);
+    // The routing requires a visible dialog. Keep it off screen and avoid
+    // activating it so this regression does not interrupt the user's desktop.
+    unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
+    assert!(unsafe { IsWindowVisible(hwnd) }.as_bool());
+    Ok(TestWindow(hwnd))
+}
+
+fn edit_selection(edit: HWND) -> (u32, u32) {
+    let (mut start, mut end) = (0_u32, 0_u32);
+    unsafe {
+        SendMessageW(
+            edit,
+            EM_GETSEL,
+            WPARAM(&mut start as *mut u32 as usize),
+            LPARAM(&mut end as *mut u32 as isize),
+        );
+    }
+    (start, end)
+}
+
+fn dispatch_test_key(main: HWND, target: HWND, key: u16) -> Result<()> {
+    let accelerator = create_accelerators()?;
+    let result = (|| -> Result<()> {
+        unsafe {
+            // TestWindow destruction can leave a quit message on the thread.
+            let mut message = MSG::default();
+            while PeekMessageW(&mut message, HWND(0), WM_QUIT, WM_QUIT, PM_REMOVE).as_bool() {}
+            PostMessageW(target, WM_KEYDOWN, WPARAM(key as usize), LPARAM(1))?;
+            PostQuitMessage(0);
+        }
+        message_loop(main, accelerator)?;
+        // TranslateMessage may enqueue WM_CHAR after the test's quit message.
+        // Deliver it before inspecting the native edit control's behavior.
+        unsafe {
+            let mut message = MSG::default();
+            while PeekMessageW(&mut message, target, WM_CHAR, WM_CHAR, PM_REMOVE).as_bool() {
+                DispatchMessageW(&message);
+            }
+        }
+        Ok(())
+    })();
+    unsafe { DestroyAcceleratorTable(accelerator) };
+    result
+}
+
+struct ClipboardShortcutProbe {
+    main: HWND,
+    target: HWND,
+    character: Cell<usize>,
+    document_command: Cell<u16>,
+}
+
+impl ClipboardShortcutProbe {
+    fn new(main: HWND, target: HWND) -> Box<Self> {
+        let probe = Box::new(Self {
+            main,
+            target,
+            character: Cell::new(0),
+            document_command: Cell::new(0),
+        });
+        let data = &*probe as *const Self as usize;
+        for hwnd in [main, target] {
+            assert!(
+                unsafe { SetWindowSubclass(hwnd, Some(clipboard_shortcut_probe), data, data) }
+                    .as_bool()
+            );
+        }
+        probe
+    }
+}
+
+impl Drop for ClipboardShortcutProbe {
+    fn drop(&mut self) {
+        for hwnd in [self.main, self.target] {
+            let _ = unsafe {
+                RemoveWindowSubclass(
+                    hwnd,
+                    Some(clipboard_shortcut_probe),
+                    self as *const Self as usize,
+                )
+            };
+        }
+    }
+}
+
+unsafe extern "system" fn clipboard_shortcut_probe(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    data: usize,
+) -> LRESULT {
+    let probe = unsafe { &*(data as *const ClipboardShortcutProbe) };
+    if hwnd == probe.main && message == WM_COMMAND {
+        let command = (wparam.0 & 0xffff) as u16;
+        if matches!(command, IDM_EDIT_COPY | IDM_EDIT_CUT | IDM_EDIT_PASTE) {
+            // Also protect the clipboard if a routing regression sends the
+            // shortcut to the document's accelerator instead of the field.
+            probe.document_command.set(command);
+            return LRESULT(0);
+        }
+    }
+    if hwnd == probe.target && message == WM_CHAR {
+        probe.character.set(wparam.0);
+        if matches!(wparam.0, 0x03 | 0x18 | 0x16) {
+            // Observe the translated Ctrl+C/X/V before the native control can
+            // access the user's clipboard. Ctrl+Z/Y still run natively.
+            return LRESULT(0);
+        }
+    }
+    if matches!(message, WM_COPY | WM_CUT | WM_PASTE) {
+        return LRESULT(0);
+    }
+    unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
+}
+
+#[test]
+#[ignore = "Requires Windows controls; uses off-screen dialogs and isolated user data"]
+fn dialog_edit_shortcuts_stay_in_the_focused_field() -> Result<()> {
+    let _lock = session::test_env_lock().lock().unwrap();
+    let _data = TestData::new();
+    let main = window()?;
+    let _find = keyboard_test_dialog(main.0, FIND_CLASS)?;
+    let _files = keyboard_test_dialog(main.0, FIND_FILES_CLASS)?;
+    let _go_to = keyboard_test_dialog(main.0, GOTO_LINE_CLASS)?;
+    let (editor, targets) = {
+        let state = get_state(main.0).unwrap();
+        state.search_dialog_mode = SearchDialogMode::Replace;
+        apply_search_state_to_dialog(state)?;
+        let find = state.find_dialog.as_ref().unwrap();
+        let files = state.find_in_files.as_ref().unwrap();
+        let go_to = state.go_to_line_dialog.as_ref().unwrap();
+        (
+            active_editor(state).unwrap(),
+            [
+                find.find_edit,
+                find.replace_edit,
+                files.find_edit,
+                files.folder_edit,
+                files.include_edit,
+                files.exclude_edit,
+                go_to.line_edit,
+            ],
+        )
+    };
+    scintilla::set_text(editor, "Before document edit")?;
+    scintilla::set_text(editor, "Current document edit")?;
+    scintilla::set_text(editor, "Future document edit")?;
+    scintilla::undo(editor);
+    scintilla::set_selection(editor, 3, 7);
+    let assert_document_unchanged = || -> Result<()> {
+        assert_eq!(scintilla::get_text(editor)?, "Current document edit");
+        assert_eq!(scintilla::selection_start(editor), 3);
+        assert_eq!(scintilla::selection_end(editor), 7);
+        assert!(scintilla::can_undo(editor));
+        assert!(scintilla::can_redo(editor));
+        Ok(())
+    };
+    let _keyboard = TestKeyboardState::new(&[VK_CONTROL.0])?;
+    for target in targets {
+        let probe = ClipboardShortcutProbe::new(main.0, target);
+        set_window_text(target, "12345");
+        unsafe {
+            SetFocus(target);
+            SendMessageW(target, EM_SETSEL, WPARAM(1), LPARAM(3));
+            SendMessageW(
+                target,
+                EM_REPLACESEL,
+                WPARAM(1),
+                LPARAM(w!("90").as_ptr() as isize),
+            );
+        }
+        assert_eq!(get_window_text(target)?, "19045");
+        dispatch_test_key(main.0, target, VK_A)?;
+        assert_eq!(edit_selection(target), (0, 5));
+        assert_document_unchanged()?;
+        for (key, character) in [(VK_C, 0x03), (VK_X, 0x18), (VK_V, 0x16)] {
+            probe.character.set(0);
+            dispatch_test_key(main.0, target, key)?;
+            assert_eq!(probe.document_command.get(), 0);
+            assert_eq!(probe.character.get(), character);
+            assert_eq!(get_window_text(target)?, "19045");
+            assert_document_unchanged()?;
+        }
+        dispatch_test_key(main.0, target, VK_Z)?;
+        assert_eq!(get_window_text(target)?, "12345");
+        assert_document_unchanged()?;
+        probe.character.set(0);
+        dispatch_test_key(main.0, target, VK_Y)?;
+        assert_eq!(probe.character.get(), 0x19);
+        assert_document_unchanged()?;
+    }
+    // The same accelerators must still reach the document when it has focus,
+    // even while the custom dialogs remain visible.
+    unsafe { SetFocus(editor) };
+    let probe = ClipboardShortcutProbe::new(main.0, editor);
+    for (key, command) in [
+        (VK_C, IDM_EDIT_COPY),
+        (VK_X, IDM_EDIT_CUT),
+        (VK_V, IDM_EDIT_PASTE),
+    ] {
+        probe.document_command.set(0);
+        dispatch_test_key(main.0, editor, key)?;
+        assert_eq!(probe.document_command.get(), command);
+    }
+    dispatch_test_key(main.0, editor, VK_Z)?;
+    assert_eq!(scintilla::get_text(editor)?, "Before document edit");
+    dispatch_test_key(main.0, editor, VK_Y)?;
+    assert_eq!(scintilla::get_text(editor)?, "Current document edit");
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows controls; uses an off-screen dialog and isolated user data"]
+fn find_and_replace_ctrl_a_selects_only_the_target_field() -> Result<()> {
+    let _lock = session::test_env_lock().lock().unwrap();
+    let _data = TestData::new();
+    let main = window()?;
+    let dialog = keyboard_test_dialog(main.0, FIND_CLASS)?;
+    let editor = active_editor(get_state(main.0).unwrap()).unwrap();
+    let document = "Document selection must stay unchanged";
+    scintilla::set_text(editor, document)?;
+    let _keyboard = TestKeyboardState::new(&[VK_CONTROL.0])?;
+    for mode in [SearchDialogMode::Find, SearchDialogMode::Replace] {
+        let (find, replace) = {
+            let state = get_state(main.0).unwrap();
+            state.search_dialog_mode = mode;
+            apply_search_state_to_dialog(state)?;
+            let dialog = state.find_dialog.as_ref().unwrap();
+            (dialog.find_edit, dialog.replace_edit)
+        };
+        set_window_text(find, "Find café");
+        set_window_text(replace, "Replace café");
+        for (target, other, expected_length) in [(find, replace, 9), (replace, find, 12)] {
+            if mode == SearchDialogMode::Find && target == replace {
+                continue;
+            }
+            scintilla::set_selection(editor, 3, 7);
+            unsafe {
+                SetFocus(target);
+                SendMessageW(target, EM_SETSEL, WPARAM(2), LPARAM(2));
+                SendMessageW(other, EM_SETSEL, WPARAM(1), LPARAM(1));
+            }
+            dispatch_test_key(main.0, target, VK_A)?;
+            assert_eq!(edit_selection(target), (0, expected_length));
+            assert_eq!(edit_selection(other), (1, 1));
+            assert_eq!(scintilla::selection_start(editor), 3);
+            assert_eq!(scintilla::selection_end(editor), 7);
+            assert_eq!(scintilla::get_text(editor)?, document);
+            assert_eq!(get_window_text(find)?, "Find café");
+            assert_eq!(get_window_text(replace)?, "Replace café");
+        }
+    }
+    // A visible Find dialog must not intercept an editor accelerator.
+    unsafe { SetFocus(editor) };
+    dispatch_test_key(main.0, editor, VK_A)?;
+    assert_eq!(scintilla::selection_start(editor), 0);
+    assert_eq!(scintilla::selection_end(editor), document.len());
+    unsafe { ShowWindow(dialog.0, SW_HIDE) };
+    let find = get_state(main.0)
+        .unwrap()
+        .find_dialog
+        .as_ref()
+        .unwrap()
+        .find_edit;
+    for key in [VK_A, VK_ESCAPE.0] {
+        let message = MSG {
+            hwnd: find,
+            message: WM_KEYDOWN,
+            wParam: WPARAM(key as usize),
+            ..Default::default()
+        };
+        assert!(!handle_dialog_key(main.0, &message));
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows controls; uses an off-screen dialog and isolated user data"]
+fn find_and_replace_escape_closes_from_children_and_restores_editor_focus() -> Result<()> {
+    let _lock = session::test_env_lock().lock().unwrap();
+    let _data = TestData::new();
+    let main = window()?;
+    let dialog = keyboard_test_dialog(main.0, FIND_CLASS)?;
+    let editor = active_editor(get_state(main.0).unwrap()).unwrap();
+    let _keyboard = TestKeyboardState::new(&[])?;
+    dispatch_test_key(main.0, editor, VK_ESCAPE.0)?;
+    assert!(unsafe { IsWindowVisible(dialog.0) }.as_bool());
+    for mode in [SearchDialogMode::Find, SearchDialogMode::Replace] {
+        let (find, replace, checkbox) = {
+            let state = get_state(main.0).unwrap();
+            state.search_dialog_mode = mode;
+            apply_search_state_to_dialog(state)?;
+            let dialog = state.find_dialog.as_ref().unwrap();
+            (dialog.find_edit, dialog.replace_edit, dialog.match_case)
+        };
+        let close = unsafe { GetDlgItem(dialog.0, IDC_FIND_CLOSE as i32) };
+        assert_ne!(close.0, 0);
+        for target in [find, replace, checkbox, close, dialog.0] {
+            if mode == SearchDialogMode::Find && target == replace {
+                continue;
+            }
+            unsafe {
+                ShowWindow(dialog.0, SW_SHOWNOACTIVATE);
+                SetFocus(target);
+            }
+            assert!(unsafe { IsWindowVisible(dialog.0) }.as_bool());
+            dispatch_test_key(main.0, target, VK_ESCAPE.0)?;
+            assert!(!unsafe { IsWindowVisible(dialog.0) }.as_bool());
+            assert_eq!(unsafe { GetFocus() }, editor);
+            assert!(get_state(main.0).unwrap().find_dialog.is_some());
+        }
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows controls; uses off-screen dialogs and isolated user data"]
+fn go_to_line_escape_cancels_and_reenables_the_editor() -> Result<()> {
+    let _lock = session::test_env_lock().lock().unwrap();
+    let _data = TestData::new();
+    let main = window()?;
+    let find = keyboard_test_dialog(main.0, FIND_CLASS)?;
+    let editor = active_editor(get_state(main.0).unwrap()).unwrap();
+    let document = "First line\nSecond line\nThird line";
+    scintilla::set_text(editor, document)?;
+    scintilla::set_selection(editor, 4, 4);
+    let _keyboard = TestKeyboardState::new(&[])?;
+    for control in [
+        Some(IDC_GOTO_LINE),
+        Some(IDC_GOTO_GO),
+        Some(IDC_GOTO_CANCEL),
+        None,
+    ] {
+        let dialog = keyboard_test_dialog(main.0, GOTO_LINE_CLASS)?;
+        let line_edit = get_state(main.0)
+            .unwrap()
+            .go_to_line_dialog
+            .as_ref()
+            .unwrap()
+            .line_edit;
+        set_window_text(line_edit, "3");
+        let target = control.map_or(dialog.0, |id| unsafe { GetDlgItem(dialog.0, id as i32) });
+        unsafe {
+            EnableWindow(main.0, BOOL(0));
+            SetFocus(target);
+        }
+        assert!(!unsafe { IsWindowEnabled(main.0) }.as_bool());
+        dispatch_test_key(main.0, target, VK_ESCAPE.0)?;
+        assert!(!unsafe { IsWindow(dialog.0) }.as_bool());
+        assert!(get_state(main.0).unwrap().go_to_line_dialog.is_none());
+        assert!(unsafe { IsWindowEnabled(main.0) }.as_bool());
+        assert_eq!(unsafe { GetFocus() }, editor);
+        assert_eq!(scintilla::get_current_pos(editor), 4);
+        assert_eq!(scintilla::get_text(editor)?, document);
+        assert!(unsafe { IsWindowVisible(find.0) }.as_bool());
+    }
+    dispatch_test_key(main.0, editor, VK_ESCAPE.0)?;
+    assert!(unsafe { IsWindow(main.0) }.as_bool());
+    assert!(unsafe { IsWindowVisible(find.0) }.as_bool());
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows controls; uses off-screen dialogs and isolated user data"]
+fn find_in_files_escape_preserves_results_and_background_search() -> Result<()> {
+    let _lock = session::test_env_lock().lock().unwrap();
+    let _data = TestData::new();
+    let main = window()?;
+    let find = keyboard_test_dialog(main.0, FIND_CLASS)?;
+    let files = keyboard_test_dialog(main.0, FIND_FILES_CLASS)?;
+    let editor = active_editor(get_state(main.0).unwrap()).unwrap();
+    let (_sender, receiver) = mpsc::channel();
+    let (mut targets, cancellation, results) = {
+        let state = get_state(main.0).unwrap();
+        let dialog = state.find_in_files.as_mut().unwrap();
+        dialog.running = true;
+        dialog.receiver = Some(receiver);
+        dialog.hits.push(FindHit {
+            path: PathBuf::from("test.txt"),
+            line: 7,
+            text: "keep this result".into(),
+        });
+        set_window_text(dialog.find_edit, "keep this query");
+        unsafe {
+            SendMessageW(
+                dialog.results,
+                LB_ADDSTRING,
+                WPARAM(0),
+                LPARAM(w!("keep this result").as_ptr() as isize),
+            );
+        }
+        (
+            vec![
+                dialog.find_edit,
+                dialog.folder_edit,
+                dialog.include_edit,
+                dialog.exclude_edit,
+                dialog.results,
+            ],
+            dialog.cancel.clone(),
+            dialog.results,
+        )
+    };
+    for id in [IDC_FIF_FIND, IDC_FIF_CANCEL, IDC_FIF_CLOSE, IDC_FIF_BROWSE] {
+        targets.push(unsafe { GetDlgItem(files.0, id as i32) });
+    }
+    targets.push(files.0);
+    let _keyboard = TestKeyboardState::new(&[])?;
+    for target in targets {
+        unsafe {
+            ShowWindow(files.0, SW_SHOWNOACTIVATE);
+            SetFocus(target);
+        }
+        dispatch_test_key(main.0, target, VK_ESCAPE.0)?;
+        assert!(!unsafe { IsWindowVisible(files.0) }.as_bool());
+        assert!(unsafe { IsWindowVisible(find.0) }.as_bool());
+        assert_eq!(unsafe { GetFocus() }, editor);
+        let state = get_state(main.0).unwrap();
+        let dialog = state.find_in_files.as_ref().unwrap();
+        assert!(dialog.running && dialog.receiver.is_some());
+        assert!(Arc::ptr_eq(&dialog.cancel, &cancellation));
+        assert!(!cancellation.load(Ordering::SeqCst));
+        assert_eq!(dialog.hits.len(), 1);
+        assert_eq!(dialog.hits[0].text, "keep this result");
+        assert_eq!(get_window_text(dialog.find_edit)?, "keep this query");
+        assert_eq!(
+            unsafe { SendMessageW(results, LB_GETCOUNT, WPARAM(0), LPARAM(0)) }.0,
+            1
+        );
+    }
+    Ok(())
+}
 
 #[test]
 fn save_extensions_preserve_auto_and_follow_explicit_language() {

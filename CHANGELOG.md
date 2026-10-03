@@ -5,6 +5,16 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 ## [Unreleased]
 
+## [0.4.28] - 2026-10-02
+
+### Fixed
+
+- Keep Ctrl+A and standard clipboard/undo shortcuts inside the focused text box
+  in Find/Replace, Go To Line, and Find in Files instead of affecting the document.
+- Dismiss the active Find/Replace, Go To Line, or Find in Files dialog with Esc
+  and return focus to the document.
+- Allow Esc to cancel reload confirmations and About even without a source link.
+
 ## [0.4.27] - 2026-09-25
 
 Version 0.4.26 was stopped before publication after finding a settings-persistence

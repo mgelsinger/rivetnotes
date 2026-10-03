@@ -29,7 +29,7 @@ use windows::Win32::UI::Controls::Dialogs::{
 };
 use windows::Win32::UI::Controls::{
     CDDS_ITEMPOSTPAINT, CDDS_ITEMPREPAINT, CDDS_PREPAINT, CDRF_DODEFAULT, CDRF_NEWFONT,
-    CDRF_NOTIFYITEMDRAW, CDRF_NOTIFYPOSTPAINT, ICC_LISTVIEW_CLASSES, ICC_WIN95_CLASSES,
+    CDRF_NOTIFYITEMDRAW, CDRF_NOTIFYPOSTPAINT, EM_SETSEL, ICC_LISTVIEW_CLASSES, ICC_WIN95_CLASSES,
     INITCOMMONCONTROLSEX, InitCommonControlsEx, LIST_VIEW_ITEM_STATE_FLAGS, LVCF_WIDTH, LVCOLUMNW,
     LVHITTESTINFO, LVIF_PARAM, LVIF_TEXT, LVIS_FOCUSED, LVIS_SELECTED, LVITEMW, LVM_DELETEALLITEMS,
     LVM_GETITEMRECT, LVM_HITTEST, LVM_INSERTCOLUMNW, LVM_INSERTITEMW, LVM_SETBKCOLOR,
@@ -46,7 +46,7 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, SetProcessDpiAwarenessContext,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_MENU, VK_RETURN,
+    GetKeyState, ReleaseCapture, SetCapture, VK_CONTROL, VK_ESCAPE, VK_MENU, VK_RETURN, VK_SHIFT,
 };
 use windows::Win32::UI::Shell::{
     BIF_NEWDIALOGSTYLE, BIF_RETURNONLYFSDIRS, BROWSEINFOW, DefSubclassProc, DragAcceptFiles,
@@ -63,25 +63,26 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetParent, GetSubMenu, GetSystemMetrics, GetWindowLongPtrW, GetWindowPlacement, GetWindowRect,
     GetWindowTextLengthW, GetWindowTextW, HACCEL, HICON, HMENU, HWND_NOTOPMOST, HWND_TOPMOST,
     ICON_BIG, ICON_SMALL, ICON_SMALL2, IDC_ARROW, IDC_SIZEWE, IDI_APPLICATION, IDNO, IDYES,
-    IMAGE_ICON, IsIconic, KillTimer, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LBN_DBLCLK,
-    LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LR_DEFAULTCOLOR, LR_SHARED, LoadCursorW, LoadIconW,
-    LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MB_YESNO, MB_YESNOCANCEL,
-    MENUBARINFO, MENUITEMINFOW, MF_BYCOMMAND, MF_BYPOSITION, MF_CHECKED, MF_ENABLED, MF_GRAYED,
-    MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MIIM_STRING, MSG, MessageBoxW, OBJID_MENU,
-    PostMessageW, PostQuitMessage, RegisterClassExW, SM_CXICON, SM_CXSMICON, SM_CYICON,
-    SM_CYSMICON, SW_HIDE, SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, SW_SHOWNORMAL,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SYSTEM_METRICS_INDEX,
-    SendMessageW, SetClassLongPtrW, SetCursor, SetMenuItemInfoW, SetTimer, SetWindowLongPtrW,
-    SetWindowPlacement, SetWindowPos, SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE,
-    WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS, WM_ACTIVATEAPP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE,
-    WM_COMMAND, WM_CONTEXTMENU, WM_COPYDATA, WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORDLG,
-    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED,
-    WM_DROPFILES, WM_ENDSESSION, WM_ERASEBKGND, WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP,
-    WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY,
-    WM_PAINT, WM_QUERYENDSESSION, WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW,
-    WPF_RESTORETOMAXIMIZED, WS_BORDER, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW,
-    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    IMAGE_ICON, IsChild, IsIconic, IsWindowVisible, KillTimer, LB_ADDSTRING, LB_GETCURSEL,
+    LB_RESETCONTENT, LBN_DBLCLK, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LR_DEFAULTCOLOR, LR_SHARED,
+    LoadCursorW, LoadIconW, LoadImageW, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING, MB_OK,
+    MB_YESNOCANCEL, MENUBARINFO, MENUITEMINFOW, MF_BYCOMMAND, MF_BYPOSITION, MF_CHECKED,
+    MF_ENABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MIIM_STRING, MSG,
+    MessageBoxW, OBJID_MENU, PostMessageW, PostQuitMessage, RegisterClassExW, SM_CXICON,
+    SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE, SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED,
+    SW_SHOWMINIMIZED, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SYSTEM_METRICS_INDEX, SendMessageW, SetClassLongPtrW, SetCursor,
+    SetMenuItemInfoW, SetTimer, SetWindowLongPtrW, SetWindowPlacement, SetWindowPos,
+    SetWindowTextW, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    TranslateAcceleratorW, TranslateMessage, WINDOW_STYLE, WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS,
+    WM_ACTIVATEAPP, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_COPYDATA,
+    WM_CREATE, WM_CTLCOLORBTN, WM_CTLCOLORDLG, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX,
+    WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_ENDSESSION, WM_ERASEBKGND,
+    WM_GETFONT, WM_GETICON, WM_INITMENUPOPUP, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT, WM_QUERYENDSESSION,
+    WM_SETCURSOR, WM_SETICON, WM_SIZE, WM_TIMER, WNDCLASSEXW, WPF_RESTORETOMAXIMIZED, WS_BORDER,
+    WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_OVERLAPPEDWINDOW, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
 };
 use windows::core::PWSTR;
 use windows::core::{HSTRING, PCWSTR, w};
@@ -623,7 +624,7 @@ fn show_about_dialog(hwnd: HWND) -> Result<()> {
     let (message, buttons) = if details.source_url == "unknown" {
         (
             format!("{about_text}\r\n\r\nPress Yes to copy details to clipboard."),
-            MB_YESNO | MB_ICONINFORMATION,
+            MB_YESNOCANCEL | MB_ICONINFORMATION,
         )
     } else {
         (
@@ -1386,6 +1387,9 @@ fn message_loop(hwnd: HWND, accel: HACCEL) -> Result<()> {
                 continue;
             }
         }
+        if handle_dialog_key(hwnd, &message) {
+            continue;
+        }
         unsafe {
             if TranslateAcceleratorW(hwnd, accel, &message) == 0 {
                 TranslateMessage(&message);
@@ -1394,6 +1398,73 @@ fn message_loop(hwnd: HWND, accel: HACCEL) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn handle_dialog_key(hwnd: HWND, message: &MSG) -> bool {
+    if message.message != WM_KEYDOWN {
+        return false;
+    }
+    // Snapshot the routing before dispatching, which can reenter the window procedures.
+    let Some((dialogs, is_edit)) = get_state(hwnd).map(|state| {
+        (
+            [
+                state.find_dialog.as_ref().map(|dialog| dialog.hwnd),
+                state.go_to_line_dialog.as_ref().map(|dialog| dialog.hwnd),
+                state.find_in_files.as_ref().map(|dialog| dialog.hwnd),
+            ],
+            state.find_dialog.as_ref().is_some_and(|dialog| {
+                message.hwnd == dialog.find_edit || message.hwnd == dialog.replace_edit
+            }) || state
+                .go_to_line_dialog
+                .as_ref()
+                .is_some_and(|dialog| message.hwnd == dialog.line_edit)
+                || state.find_in_files.as_ref().is_some_and(|dialog| {
+                    [
+                        dialog.find_edit,
+                        dialog.folder_edit,
+                        dialog.include_edit,
+                        dialog.exclude_edit,
+                    ]
+                    .contains(&message.hwnd)
+                }),
+        )
+    }) else {
+        return false;
+    };
+    // Dismiss only the dialog receiving the key. Native menus and modal system
+    // dialogs run their own message loops and retain their usual Esc behavior.
+    let Some(dialog) = dialogs.into_iter().flatten().find(|&dialog| {
+        unsafe { IsWindowVisible(dialog) }.as_bool()
+            && (message.hwnd == dialog || unsafe { IsChild(dialog, message.hwnd) }.as_bool())
+    }) else {
+        return false;
+    };
+    if message.wParam.0 == VK_ESCAPE.0 as usize {
+        unsafe {
+            SendMessageW(dialog, WM_CLOSE, WPARAM(0), LPARAM(0));
+        }
+        return true;
+    }
+    if is_edit
+        && unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0
+        && unsafe { GetKeyState(VK_MENU.0 as i32) } >= 0
+        && unsafe { GetKeyState(VK_SHIFT.0 as i32) } >= 0
+    {
+        match message.wParam.0 as u16 {
+            VK_A => unsafe {
+                SendMessageW(message.hwnd, EM_SETSEL, WPARAM(0), LPARAM(-1));
+            },
+            VK_C | VK_X | VK_V | VK_Z | VK_Y => unsafe {
+                // Let the native edit control handle its own clipboard and undo
+                // shortcuts before the main window can translate them into commands.
+                TranslateMessage(message);
+                DispatchMessageW(message);
+            },
+            _ => return false,
+        }
+        return true;
+    }
+    false
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -3247,7 +3318,7 @@ fn prompt_discard_and_reload(hwnd: HWND) -> bool {
             hwnd,
             PCWSTR::from_raw(message.as_ptr()),
             PCWSTR::from_raw(title.as_ptr()),
-            MB_YESNO | MB_ICONWARNING,
+            MB_YESNOCANCEL | MB_ICONWARNING,
         )
     };
     result == IDYES
@@ -3261,7 +3332,7 @@ fn prompt_reload(hwnd: HWND) -> bool {
             hwnd,
             PCWSTR::from_raw(message.as_ptr()),
             PCWSTR::from_raw(title.as_ptr()),
-            MB_YESNO | MB_ICONWARNING,
+            MB_YESNOCANCEL | MB_ICONWARNING,
         )
     };
     result == IDYES
@@ -8685,18 +8756,14 @@ unsafe extern "system" fn find_wndproc(
                     IDC_FIND_IN_FILES => {
                         let _ = show_find_in_files_dialog(main_hwnd, state);
                     }
-                    IDC_FIND_CLOSE => unsafe {
-                        ShowWindow(hwnd, SW_HIDE);
-                    },
+                    IDC_FIND_CLOSE => hide_dialog_and_focus_editor(hwnd),
                     _ => {}
                 }
             }
             LRESULT(0)
         }
         WM_CLOSE => {
-            unsafe {
-                ShowWindow(hwnd, SW_HIDE);
-            }
+            hide_dialog_and_focus_editor(hwnd);
             LRESULT(0)
         }
         WM_NCDESTROY => {
@@ -8707,6 +8774,17 @@ unsafe extern "system" fn find_wndproc(
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+fn hide_dialog_and_focus_editor(hwnd: HWND) {
+    let main_hwnd = unsafe { HWND(GetWindowLongPtrW(hwnd, GWLP_USERDATA)) };
+    let editor = get_state(main_hwnd).and_then(|state| active_editor(state));
+    unsafe {
+        ShowWindow(hwnd, SW_HIDE);
+        if let Some(editor) = editor {
+            SetFocus(editor);
+        }
     }
 }
 
@@ -9257,9 +9335,7 @@ unsafe extern "system" fn find_in_files_wndproc(
                     IDC_FIF_CANCEL => {
                         cancel_find_in_files(state);
                     }
-                    IDC_FIF_CLOSE => unsafe {
-                        ShowWindow(hwnd, SW_HIDE);
-                    },
+                    IDC_FIF_CLOSE => hide_dialog_and_focus_editor(hwnd),
                     IDC_FIF_BROWSE => {
                         if let Some(path) = browse_for_folder(hwnd)
                             && let Some(dialog) = &state.find_in_files
@@ -9286,9 +9362,7 @@ unsafe extern "system" fn find_in_files_wndproc(
             LRESULT(0)
         }
         WM_CLOSE => {
-            unsafe {
-                ShowWindow(hwnd, SW_HIDE);
-            }
+            hide_dialog_and_focus_editor(hwnd);
             LRESULT(0)
         }
         WM_NCDESTROY => {
