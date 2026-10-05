@@ -6,8 +6,10 @@ Included third-party components:
 
 1. Scintilla / Lexilla
    Copyright (c) Neil Hodgson
-   License text: THIRD_PARTY_NOTICES/Scintilla-Lexilla-License.txt
+   License texts: THIRD_PARTY_NOTICES/Scintilla.txt
+                  THIRD_PARTY_NOTICES/Lexilla.txt
 
 2. Rust crate dependencies
-   Cargo dependencies are listed in Cargo.toml and Cargo.lock.
-   For releases, generate and ship a full crate attribution report.
+   Windows x64 dependency attributions and license texts:
+   THIRD_PARTY_NOTICES/Rust-Crates.txt
+   This report also includes build and development dependencies.

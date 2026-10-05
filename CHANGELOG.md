@@ -33,8 +33,13 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 - The installer and portable ZIP contain the same application fix. Installed
   copies can receive this release through the existing signed update feed;
   portable copies continue to update manually.
+- If the startup error prevents Rivet from running, download and run the new
+  installer directly, or replace the portable executable while keeping profile
+  data. The automatic updater requires a running Rivet instance.
 - Windows 11 x64 is the support baseline, including its original release and
   subsequent builds. This fix does not require a newer Windows build.
+- Both packages now include the Rust dependency attribution report and corrected
+  third-party license references.
 
 ## [0.4.28] - 2026-10-02
 
