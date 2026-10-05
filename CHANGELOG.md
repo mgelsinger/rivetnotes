@@ -5,6 +5,42 @@ The format is based on Keep a Changelog, and this project adheres to SemVer.
 
 ## [Unreleased]
 
+## [0.4.29] - 2026-10-04
+
+### Fixed
+
+- Tested bug fix for the reported `create_accelerators: Invalid access to memory
+  location. (0x800703E6)` startup failure in 0.4.27 and 0.4.28. Keyboard
+  accelerators now use an explicitly aligned heap buffer.
+- Initialize accelerators before creating the editor so a startup failure cannot
+  leave a usable window without shortcut handling behind the error dialog.
+  This prevents that partial-startup state where Ctrl+F and Ctrl+H insert control
+  characters instead of opening Find and Replace.
+
+### Verification status
+
+- Automated regression tests cover native table creation, accelerator contents,
+  and Ctrl+F/Ctrl+H command routing without inserting control characters. Debug
+  and optimized checks pass, and the release executable passes a startup and
+  clean-shutdown smoke test with an isolated portable profile.
+- **Confirmation on an affected machine is still needed.** The original failure
+  could not be reproduced locally. Alignment is the leading explanation, and
+  the fix removes that dependency on memory placement; this release does not
+  claim that the reporter's exact failure has been conclusively resolved.
+
+### Availability
+
+- The installer and portable ZIP contain the same application fix. Installed
+  copies can receive this release through the existing signed update feed;
+  portable copies continue to update manually.
+- If the startup error prevents Rivet from running, download and run the new
+  installer directly, or replace the portable executable while keeping profile
+  data. The automatic updater requires a running Rivet instance.
+- Windows 11 x64 is the support baseline, including its original release and
+  subsequent builds. This fix does not require a newer Windows build.
+- Both packages now include the Rust dependency attribution report and corrected
+  third-party license references.
+
 ## [0.4.28] - 2026-10-02
 
 ### Fixed

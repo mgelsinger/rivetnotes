@@ -22,7 +22,9 @@
 
 - Review dependency updates and licenses.
 - Run dependency audit (`cargo audit`) and review RustSec output.
-- Generate dependency attribution report for Rust crates and include it in release artifacts.
+- Run `pwsh -File scripts/generate-third-party-notices.ps1` after lockfile changes,
+  then verify with `pwsh -File scripts/generate-third-party-notices.ps1 -Check`.
+  Both packages include the generated `THIRD_PARTY_NOTICES/Rust-Crates.txt` report.
 - Capture build provenance: toolchain version, git revision, build date.
 - If signing is available, sign binaries and update checksums after signing.
 

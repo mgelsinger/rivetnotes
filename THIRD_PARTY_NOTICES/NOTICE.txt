@@ -8,6 +8,10 @@ Rivet bundles third-party source from the projects listed below.
   Upstream: https://www.scintilla.org/Lexilla.html
   Source tree: third_party/lexilla
   Notice file: Lexilla.txt
+- Rust crates for Windows x64, including build and development dependencies
+  Versions: Cargo.lock
+  Attribution and license texts: Rust-Crates.txt
+  Regenerate with: pwsh -File scripts/generate-third-party-notices.ps1
 
 Release packaging copies this entire directory into both:
 
