@@ -547,6 +547,13 @@ pub fn run() -> Result<()> {
 
     register_aux_classes(instance)?;
 
+    // Establish shortcut handling before creating an interactive editor. On
+    // failure, the error message box must not pump an otherwise usable window
+    // without Rivet's accelerator translation.
+    let accel = AcceleratorTable(
+        create_accelerators()
+            .map_err(|err| AppError::new(format!("create_accelerators: {err}")))?,
+    );
     let menu = create_menu().map_err(|err| AppError::new(format!("create_menu: {err}")))?;
     let hwnd = unsafe {
         CreateWindowExW(
@@ -592,16 +599,9 @@ pub fn run() -> Result<()> {
         open_cli_paths(hwnd, state, &cli_paths);
     }
 
-    let accel = create_accelerators()
-        .map_err(|err| AppError::new(format!("create_accelerators: {err}")))?;
-
     eprintln!("startup_ms={}", start.elapsed().as_millis());
 
-    let result = message_loop(hwnd, accel);
-    unsafe {
-        let _ = DestroyAcceleratorTable(accel);
-    }
-    result
+    message_loop(hwnd, accel.0)
 }
 
 pub fn show_error(title: &str, message: &str) {
@@ -1168,8 +1168,28 @@ fn set_window_icons(hwnd: HWND, instance: HINSTANCE) {
     }
 }
 
+struct AcceleratorTable(HACCEL);
+
+impl Drop for AcceleratorTable {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = DestroyAcceleratorTable(self.0);
+        }
+    }
+}
+
+// ACCEL has a six-byte stride and only two-byte alignment. Align the entire
+// buffer, not each entry, so the native layout is preserved. This avoids
+// relying on incidental stack/allocator alignment for the layout-sensitive
+// ERROR_NOACCESS startup failure reported with 35 entries (PR #12).
+// Windows build 25140 release notes document a native accelerator bug with
+// pointers to odd-indexed ACCEL entries; newer builds accepting them is not a
+// reason to depend on two-byte alignment here.
+#[repr(C, align(8))]
+struct AcceleratorEntries<const N: usize>([ACCEL; N]);
+
 fn create_accelerators() -> Result<HACCEL> {
-    let accels = [
+    let accels = Box::new(AcceleratorEntries([
         ACCEL {
             fVirt: FVIRTKEY | FCONTROL,
             key: VK_Z,
@@ -1345,9 +1365,9 @@ fn create_accelerators() -> Result<HACCEL> {
             key: VK_PRIOR,
             cmd: CMD_TAB_PREV,
         },
-    ];
+    ]));
 
-    let accel = unsafe { CreateAcceleratorTableW(&accels)? };
+    let accel = unsafe { CreateAcceleratorTableW(&accels.0)? };
     Ok(accel)
 }
 

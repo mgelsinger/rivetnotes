@@ -10,8 +10,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, GetKeyboardState, IsWindowEnabled, SetKeyboardState,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetDlgItem, IsWindow, LB_GETCOUNT, PM_REMOVE, PeekMessageW, SW_SHOWNOACTIVATE, WM_COPY, WM_CUT,
-    WM_PASTE, WM_QUIT,
+    CopyAcceleratorTableW, GetDlgItem, IsWindow, LB_GETCOUNT, PM_REMOVE, PeekMessageW,
+    SW_SHOWNOACTIVATE, WM_COPY, WM_CUT, WM_PASTE, WM_QUIT,
 };
 
 struct TestKeyboardState([u8; 256]);
@@ -99,14 +99,14 @@ fn dispatch_test_key(main: HWND, target: HWND, key: u16) -> Result<()> {
     result
 }
 
-struct ClipboardShortcutProbe {
+struct ShortcutProbe {
     main: HWND,
     target: HWND,
     character: Cell<usize>,
     document_command: Cell<u16>,
 }
 
-impl ClipboardShortcutProbe {
+impl ShortcutProbe {
     fn new(main: HWND, target: HWND) -> Box<Self> {
         let probe = Box::new(Self {
             main,
@@ -116,30 +116,23 @@ impl ClipboardShortcutProbe {
         });
         let data = &*probe as *const Self as usize;
         for hwnd in [main, target] {
-            assert!(
-                unsafe { SetWindowSubclass(hwnd, Some(clipboard_shortcut_probe), data, data) }
-                    .as_bool()
-            );
+            assert!(unsafe { SetWindowSubclass(hwnd, Some(shortcut_probe), data, data) }.as_bool());
         }
         probe
     }
 }
 
-impl Drop for ClipboardShortcutProbe {
+impl Drop for ShortcutProbe {
     fn drop(&mut self) {
         for hwnd in [self.main, self.target] {
             let _ = unsafe {
-                RemoveWindowSubclass(
-                    hwnd,
-                    Some(clipboard_shortcut_probe),
-                    self as *const Self as usize,
-                )
+                RemoveWindowSubclass(hwnd, Some(shortcut_probe), self as *const Self as usize)
             };
         }
     }
 }
 
-unsafe extern "system" fn clipboard_shortcut_probe(
+unsafe extern "system" fn shortcut_probe(
     hwnd: HWND,
     message: u32,
     wparam: WPARAM,
@@ -147,12 +140,15 @@ unsafe extern "system" fn clipboard_shortcut_probe(
     _id: usize,
     data: usize,
 ) -> LRESULT {
-    let probe = unsafe { &*(data as *const ClipboardShortcutProbe) };
+    let probe = unsafe { &*(data as *const ShortcutProbe) };
     if hwnd == probe.main && message == WM_COMMAND {
         let command = (wparam.0 & 0xffff) as u16;
-        if matches!(command, IDM_EDIT_COPY | IDM_EDIT_CUT | IDM_EDIT_PASTE) {
-            // Also protect the clipboard if a routing regression sends the
-            // shortcut to the document's accelerator instead of the field.
+        if matches!(
+            command,
+            IDM_EDIT_COPY | IDM_EDIT_CUT | IDM_EDIT_PASTE | IDM_EDIT_FIND | IDM_EDIT_REPLACE
+        ) {
+            // Observe document shortcuts without opening dialogs or accessing
+            // the user's clipboard, including when a field key is misrouted.
             probe.document_command.set(command);
             return LRESULT(0);
         }
@@ -215,7 +211,7 @@ fn dialog_edit_shortcuts_stay_in_the_focused_field() -> Result<()> {
     };
     let _keyboard = TestKeyboardState::new(&[VK_CONTROL.0])?;
     for target in targets {
-        let probe = ClipboardShortcutProbe::new(main.0, target);
+        let probe = ShortcutProbe::new(main.0, target);
         set_window_text(target, "12345");
         unsafe {
             SetFocus(target);
@@ -250,7 +246,7 @@ fn dialog_edit_shortcuts_stay_in_the_focused_field() -> Result<()> {
     // The same accelerators must still reach the document when it has focus,
     // even while the custom dialogs remain visible.
     unsafe { SetFocus(editor) };
-    let probe = ClipboardShortcutProbe::new(main.0, editor);
+    let probe = ShortcutProbe::new(main.0, editor);
     for (key, command) in [
         (VK_C, IDM_EDIT_COPY),
         (VK_X, IDM_EDIT_CUT),
@@ -509,11 +505,59 @@ fn save_extensions_preserve_auto_and_follow_explicit_language() {
 fn accelerator_table_with_f5_can_be_created_repeatedly() -> Result<()> {
     // Run this in both debug and release: PR #12 reported a failure at 35
     // entries in optimized builds. Verify the real table, not a simplified copy.
+    assert!(std::mem::align_of::<AcceleratorEntries<35>>() >= 8);
+    assert_eq!(std::mem::size_of::<ACCEL>(), 6);
     for _ in 0..100 {
         let accelerator = create_accelerators()?;
+        let mut entries = AcceleratorEntries([ACCEL::default(); 35]);
+        assert_eq!(entries.0.as_ptr() as usize % 8, 0);
         unsafe {
+            assert_eq!(CopyAcceleratorTableW(accelerator, None), 35);
+            assert_eq!(CopyAcceleratorTableW(accelerator, Some(&mut entries.0)), 35);
             assert!(DestroyAcceleratorTable(accelerator).as_bool());
         }
+        for (flags, key, command) in [
+            (FVIRTKEY | FCONTROL, VK_F, IDM_EDIT_FIND),
+            (FVIRTKEY | FCONTROL, VK_H, IDM_EDIT_REPLACE),
+            (FVIRTKEY, VK_F5, IDM_EDIT_INSERT_DATETIME),
+        ] {
+            assert_eq!(
+                entries
+                    .0
+                    .iter()
+                    .filter(|entry| entry.fVirt == flags
+                        && entry.key == key
+                        && entry.cmd == command)
+                    .count(),
+                1
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires Windows controls; uses a hidden window and isolated user data"]
+fn find_and_replace_shortcuts_send_commands_without_inserting_control_characters() -> Result<()> {
+    let _lock = session::test_env_lock().lock().unwrap();
+    let _data = TestData::new();
+    let main = window()?;
+    let editor = active_editor(get_state(main.0).unwrap()).unwrap();
+    let document = "Find and Replace must leave this document unchanged";
+    scintilla::set_text(editor, document)?;
+    scintilla::set_selection(editor, 5, 8);
+    let probe = ShortcutProbe::new(main.0, editor);
+    let _keyboard = TestKeyboardState::new(&[VK_CONTROL.0])?;
+    for (key, command) in [(VK_F, IDM_EDIT_FIND), (VK_H, IDM_EDIT_REPLACE)] {
+        probe.character.set(0);
+        probe.document_command.set(0);
+        dispatch_test_key(main.0, editor, key)?;
+        assert_eq!(probe.document_command.get(), command);
+        assert_eq!(probe.character.get(), 0);
+        assert_eq!(scintilla::get_text(editor)?, document);
+        assert_eq!(scintilla::selection_start(editor), 5);
+        assert_eq!(scintilla::selection_end(editor), 8);
+        assert!(get_state(main.0).unwrap().find_dialog.is_none());
     }
     Ok(())
 }

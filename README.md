@@ -36,6 +36,10 @@ top, left, or right of the editor.
 
 **[Download the latest release](https://github.com/mgelsinger/rivetnotes/releases/latest)** for Windows x64.
 
+Windows 11 x64 is the minimum supported OS, including its original release and
+subsequent builds. Windows 10 compatibility is desirable but is outside the
+supported baseline.
+
 | Choose | Download | Getting started |
 | --- | --- | --- |
 | **Installer** | `rivet-<version>-setup.exe` | Install for your account or for all users. Includes Explorer integration and optional updates. |
